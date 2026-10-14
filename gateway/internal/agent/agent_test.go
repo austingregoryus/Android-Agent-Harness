@@ -103,6 +103,8 @@ func TestSystemPromptCarriesPolicyHints(t *testing.T) {
 		"policy.approval_required", "Do NOT retry",
 		"policy.denied", "policy.rate_limited", "terminal",
 		"permission.missing", "capability.unavailable",
+		"transport.outcome_unknown", "Do NOT retry blindly", "identical arguments",
+		"transport.not_sent", "tool.invalid_arguments",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("system prompt is missing %q", want)
@@ -411,7 +413,7 @@ func TestPhoneTransportFailureIsNotAProviderFailure(t *testing.T) {
 // phone accepts a non-read-only call and actually executes it, but the HTTP
 // connection fails before the response reaches the gateway (the fake phone
 // hijacks and closes the connection right after running the handler). The
-// model - seeing a transport.failed tool result - retries with the identical
+// model - seeing a transport.outcome_unknown tool result - retries with the identical
 // arguments on the next turn. Because IdempotencyKey is derived from
 // correlation_id | tool | canonical_args and the task keeps one correlation id
 // throughout, the retry carries the exact same idempotencyKey as the first
@@ -438,7 +440,7 @@ func TestTransportFailureAfterExecutionRetriesIdempotently(t *testing.T) {
 		Name: "fake",
 		Script: []provider.ScriptStep{
 			{ToolCalls: []provider.Part{provider.ToolCallPart("c1", "messaging.send_sms", sendArgs)}},
-			// The model sees the transport.failed tool result and retries with
+			// The model sees the transport.outcome_unknown tool result and retries with
 			// the identical arguments.
 			{ToolCalls: []provider.Part{provider.ToolCallPart("c2", "messaging.send_sms", sendArgs)}},
 			{Text: "sent."},
@@ -491,8 +493,10 @@ func TestTransportFailureAfterExecutionRetriesIdempotently(t *testing.T) {
 	if len(sendTrace) != 2 {
 		t.Fatalf("trace has %d messaging.send_sms entries, want 2 (one failed, one recovered): %+v", len(sendTrace), sendTrace)
 	}
-	if sendTrace[0].OK || sendTrace[0].ErrorCode != "transport.failed" {
-		t.Errorf("trace[0] = %+v, want a transport.failed failure", sendTrace[0])
+	// The response was lost after the phone acted, so the failure must say the
+	// outcome is unknown rather than that the call failed.
+	if sendTrace[0].OK || sendTrace[0].ErrorCode != "transport.outcome_unknown" {
+		t.Errorf("trace[0] = %+v, want a transport.outcome_unknown failure", sendTrace[0])
 	}
 	successCount := 0
 	for _, tr := range sendTrace {

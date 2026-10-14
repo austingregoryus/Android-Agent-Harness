@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +43,14 @@ const (
 	// ToolHealth reports phone and provider health.
 	ToolHealth = "gateway.health"
 )
+
+// serverInstructions is the initialize result's instructions: how to retry a
+// phone call safely.
+const serverInstructions = "Phone tools with side effects carry an idempotency key derived from the call's " +
+	"correlation id, tool name and arguments. Set params._meta.correlationId (corr_ followed by 8 to 64 of " +
+	"A-Z a-z 0-9 _ -) on tools/call and reuse it when retrying the same call: the phone then returns the " +
+	"original outcome instead of acting twice. A transport.outcome_unknown result means the call may have run; " +
+	"retry only with the correlation_id it reports and identical arguments. transport.not_sent means it did not run."
 
 // defaultWaitTimeout bounds gateway.wait_for_event when the caller omits one.
 const defaultWaitTimeout = 60 * time.Second
@@ -381,7 +390,8 @@ func (s *Server) dispatch(ctx context.Context, method string, params json.RawMes
 			"capabilities": map[string]any{
 				"tools": map[string]any{"listChanged": false},
 			},
-			"serverInfo": map[string]any{"name": ServerName, "version": ServerVersion},
+			"serverInfo":   map[string]any{"name": ServerName, "version": ServerVersion},
+			"instructions": serverInstructions,
 		}, nil
 
 	case "ping":
@@ -398,6 +408,7 @@ func (s *Server) dispatch(ctx context.Context, method string, params json.RawMes
 		var p struct {
 			Name      string         `json:"name"`
 			Arguments map[string]any `json:"arguments"`
+			Meta      map[string]any `json:"_meta"`
 		}
 		if len(params) > 0 {
 			if err := json.Unmarshal(params, &p); err != nil {
@@ -410,7 +421,11 @@ func (s *Server) dispatch(ctx context.Context, method string, params json.RawMes
 		if p.Arguments == nil {
 			p.Arguments = map[string]any{}
 		}
-		return s.callTool(ctx, p.Name, p.Arguments)
+		corrID, err := clientCorrelationID(p.Meta)
+		if err != nil {
+			return nil, &rpcErrorObject{Code: codeInvalidParams, Message: err.Error()}
+		}
+		return s.callTool(ctx, p.Name, p.Arguments, corrID)
 
 	default:
 		return nil, &rpcErrorObject{Code: codeMethodNotFound, Message: "unknown method: " + method}
@@ -458,7 +473,9 @@ func gatewayToolDefs() []map[string]any {
 		{
 			"name": ToolWaitForEvent,
 			"description": "Subscribe to the phone's event channel and block until the first event matching " +
-				"topic_glob (and the optional filter) arrives, then unsubscribe and return it. " +
+				"topic_glob (and the optional filter) arrives, then unsubscribe and return it. Only events that " +
+				"arrive after the call starts are reported; each call has its own subscription, so concurrent " +
+				"waits on the same topic each see the event. " +
 				"Use this to wait for an inbound SMS, a call state change, or an approval resolution.",
 			"inputSchema": map[string]any{
 				"type": "object",
@@ -504,8 +521,30 @@ func gatewayToolDefs() []map[string]any {
 	}
 }
 
-// callTool dispatches to a gateway tool or proxies to the phone.
-func (s *Server) callTool(ctx context.Context, name string, args map[string]any) (any, *rpcErrorObject) {
+// correlationIDPattern bounds a client-supplied params._meta.correlationId: the
+// runtime's corr_ prefix (events derived from the call carry the id, and the
+// event schema requires it) followed by 8 to 64 URL-safe characters.
+var correlationIDPattern = regexp.MustCompile(`^corr_[A-Za-z0-9_-]{8,64}$`)
+
+// clientCorrelationID returns the correlation id the MCP client supplied in
+// params._meta.correlationId, or "" when it supplied none. A client that reuses
+// one id across retries of the same call gets the same idempotency key on each,
+// so the phone returns the first outcome instead of executing again.
+func clientCorrelationID(meta map[string]any) (string, error) {
+	v, ok := meta["correlationId"]
+	if !ok || v == nil {
+		return "", nil
+	}
+	id, isString := v.(string)
+	if !isString || !correlationIDPattern.MatchString(id) {
+		return "", errors.New("params._meta.correlationId must match ^corr_[A-Za-z0-9_-]{8,64}$")
+	}
+	return id, nil
+}
+
+// callTool dispatches to a gateway tool or proxies to the phone. corrID is the
+// client's own correlation id, or "" to mint one.
+func (s *Server) callTool(ctx context.Context, name string, args map[string]any, corrID string) (any, *rpcErrorObject) {
 	switch name {
 	case ToolWaitForEvent:
 		return s.waitForEvent(ctx, args)
@@ -522,13 +561,20 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]any)
 	if !ok {
 		return nil, &rpcErrorObject{Code: codeMethodNotFound, Message: "unknown tool: " + name}
 	}
-	corrID := agent.NewCorrelationID(s.opts.CorrelationPrefix)
+	if corrID == "" {
+		corrID = agent.NewCorrelationID(s.opts.CorrelationPrefix)
+	}
 	outcome, err := s.opts.Device.CallTool(ctx, name, args, device.CallToolOptions{
 		CorrelationID: corrID,
 		ReadOnly:      tool.ReadOnly(),
 	})
 	if err != nil {
-		return nil, &rpcErrorObject{Code: codeInternalError, Message: err.Error()}
+		return callErrorResult(err, corrID)
+	}
+	// A result the gateway cannot vouch for (no structuredContent, mistyped
+	// isError or error) is not a success, whatever its text says.
+	if outcome.ErrorCode == device.ErrInvalidResult {
+		return outcomeUnknownResult(device.ErrInvalidResult, outcome.Detail, outcome.CorrelationID, outcome.IdempotencyKey), nil
 	}
 	// Pass the phone's envelope straight through so policy outcomes stay
 	// isError tool results rather than becoming JSON-RPC errors.
@@ -536,6 +582,58 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]any)
 		return outcome.Raw, nil
 	}
 	return textResult(outcome.Text, !outcome.OK), nil
+}
+
+// Tool-result error codes for a proxied call that produced no phone result.
+const (
+	// errTransportNotSent means the phone did not execute the call.
+	errTransportNotSent = "transport.not_sent"
+	// errTransportOutcomeUnknown means the phone may have executed the call.
+	errTransportOutcomeUnknown = "transport.outcome_unknown"
+)
+
+// callErrorResult maps a failed phone call onto what the MCP client sees.
+//
+// Transport failures are isError tool results, not JSON-RPC errors, so the
+// client (and the model behind it) can tell "never reached the phone" from "may
+// have run". A JSON-RPC error from the phone is a dispatch refusal and is passed
+// through with the phone's own code.
+func callErrorResult(err error, corrID string) (any, *rpcErrorObject) {
+	var ce *device.CallError
+	if !errors.As(err, &ce) {
+		return outcomeUnknownResult(errTransportOutcomeUnknown, err.Error(), corrID, ""), nil
+	}
+	switch ce.Kind {
+	case device.CallRejected:
+		return nil, &rpcErrorObject{Code: ce.RPCCode, Message: ce.RPCMessage}
+	case device.CallNotSent:
+		return errorResult(errTransportNotSent, ce.Error()+"; the phone did not execute the call"), nil
+	default:
+		return outcomeUnknownResult(errTransportOutcomeUnknown, ce.Error(), ce.CorrelationID, ce.IdempotencyKey), nil
+	}
+}
+
+// outcomeUnknownResult reports a call the phone may or may not have executed.
+// It carries the correlation id and idempotency key so the client can check the
+// phone's audit log, or retry with params._meta.correlationId set to the same id
+// and identical arguments, which the phone deduplicates.
+func outcomeUnknownResult(code, detail, corrID, idemKey string) map[string]any {
+	structured := map[string]any{
+		"error": code,
+		"detail": detail + "; the phone may have executed the call. Do not retry blindly: check the phone's state, " +
+			"or retry with params._meta.correlationId=" + corrID + " and identical arguments so the phone returns " +
+			"the original outcome instead of acting twice",
+		"correlation_id": corrID,
+	}
+	if idemKey != "" {
+		structured["idempotency_key"] = idemKey
+	}
+	raw, _ := json.Marshal(structured)
+	return map[string]any{
+		"content":           []any{map[string]any{"type": "text", "text": string(raw)}},
+		"structuredContent": structured,
+		"isError":           true,
+	}
 }
 
 func (s *Server) lookupTool(ctx context.Context, name string) (device.Tool, bool) {
@@ -582,7 +680,11 @@ func (s *Server) waitForEvent(ctx context.Context, args map[string]any) (any, *r
 		timeout = maxWaitTimeout
 	}
 
-	spec := device.SubscribeSpec{TopicGlob: glob}
+	// Each wait gets its own fresh phone-side subscription: it reports only
+	// events that arrive after the call starts (never a backlog left by an
+	// earlier wait or a crashed gateway), and concurrent waits on the same
+	// topic_glob do not collide.
+	spec := device.SubscribeSpec{TopicGlob: glob, Ephemeral: true}
 	if raw, ok := args["filter"]; ok {
 		clauses, err := decodeFilter(raw)
 		if err != nil {

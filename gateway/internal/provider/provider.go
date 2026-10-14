@@ -63,6 +63,11 @@ type Part struct {
 	Name string `json:"name,omitempty"`
 	// Args are the tool arguments when Type is PartToolCall.
 	Args map[string]any `json:"args,omitempty"`
+	// ArgsError is set on a PartToolCall whose arguments the model emitted as
+	// something other than a JSON object (malformed JSON, an array, a string).
+	// Args is then empty and must not be executed; the agent answers the call
+	// with a tool.invalid_arguments result instead of reaching the phone.
+	ArgsError string `json:"args_error,omitempty"`
 	// CallID references the originating tool call when Type is PartToolResult.
 	CallID string `json:"call_id,omitempty"`
 	// Content is the tool result body when Type is PartToolResult. It is a JSON
@@ -70,10 +75,15 @@ type Part struct {
 	Content string `json:"content,omitempty"`
 	// IsError marks a failed tool result.
 	IsError bool `json:"is_error,omitempty"`
-	// Provider binds an opaque part to the provider that produced it. It is set
-	// only when Type is PartOpaque, and an adapter must refuse to replay a part
-	// bound to a different provider.
+	// Provider binds an opaque part, or a part's Signature, to the provider that
+	// produced it. It is set when Type is PartOpaque or Signature is set, and an
+	// adapter must refuse to replay either to a different provider.
 	Provider string `json:"opaque_provider,omitempty"`
+	// Signature is a provider-bound opaque token attached to a text or tool-call
+	// part, such as Gemini's thoughtSignature, which the API expects echoed back
+	// on the same part of the history. It is replayed only to Provider and only
+	// on a message that provider produced; every other adapter ignores it.
+	Signature string `json:"signature,omitempty"`
 	// Raw is the verbatim provider block when Type is PartOpaque. It is stored
 	// and replayed byte for byte; the gateway never inspects or rewrites it.
 	Raw json.RawMessage `json:"raw,omitempty"`
@@ -318,16 +328,28 @@ func encodeArgs(args map[string]any) json.RawMessage {
 	return json.RawMessage(raw)
 }
 
-// decodeArgs parses raw JSON tool-call arguments back into a map. Absent or
-// malformed arguments become an empty map rather than nil, so round trips are
-// structurally stable.
-func decodeArgs(raw json.RawMessage) map[string]any {
-	if len(raw) == 0 {
-		return map[string]any{}
+// parseArgs parses raw JSON tool-call arguments. Absent arguments and JSON null
+// are an empty object, so round trips are structurally stable; anything that is
+// not a JSON object is an error, with an empty map returned alongside it.
+func parseArgs(raw json.RawMessage) (map[string]any, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return map[string]any{}, nil
 	}
 	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil || m == nil {
-		return map[string]any{}
+	if err := json.Unmarshal([]byte(trimmed), &m); err != nil {
+		return map[string]any{}, fmt.Errorf("tool arguments are not a JSON object: %v (got %s)", err, truncate(trimmed, 200))
 	}
-	return m
+	return m, nil
+}
+
+// toolCallFromJSON builds a tool-call part from raw JSON arguments, marking it
+// invalid (ArgsError) when they do not parse as an object.
+func toolCallFromJSON(id, name string, raw json.RawMessage) Part {
+	args, err := parseArgs(raw)
+	part := ToolCallPart(id, name, args)
+	if err != nil {
+		part.ArgsError = err.Error()
+	}
+	return part
 }

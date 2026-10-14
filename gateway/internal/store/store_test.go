@@ -116,6 +116,30 @@ func TestSubscriptionCursorStore(t *testing.T) {
 	if subID != "sub_b" || cursor != 25 {
 		t.Errorf("= (%q, %d)", subID, cursor)
 	}
+
+	// A new subscription id is a new phone-side subscription (for example after
+	// a journal reset), so its lower cursor replaces the old one rather than
+	// being pinned to it.
+	if err := s.SaveSubscription("k1", "sub_c", 3); err != nil {
+		t.Fatal(err)
+	}
+	subID, cursor, _ = s.LoadSubscription("k1")
+	if subID != "sub_c" || cursor != 3 {
+		t.Errorf("after a subscription id change = (%q, %d), want (sub_c, 3)", subID, cursor)
+	}
+
+	// Unsubscribing deletes the row, so a later subscription for the same key
+	// starts clean instead of replaying an old backlog.
+	if err := s.DeleteSubscription("k1"); err != nil {
+		t.Fatal(err)
+	}
+	subID, cursor, err = s.LoadSubscription("k1")
+	if err != nil || subID != "" || cursor != 0 {
+		t.Errorf("after delete = (%q, %d, %v), want empty", subID, cursor, err)
+	}
+	if err := s.DeleteSubscription("k1"); err != nil {
+		t.Errorf("deleting a missing key: %v", err)
+	}
 }
 
 func TestEventsAreBounded(t *testing.T) {

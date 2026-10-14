@@ -2,6 +2,8 @@ package device
 
 import (
 	"context"
+	crand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +24,18 @@ const (
 
 // requestTimeout bounds how long the client waits for a reply frame.
 const requestTimeout = 15 * time.Second
+
+// Replay recovery bounds. A failed replay (timeout, error frame, send error) is
+// retried with exponential backoff from replayRetryMin to replayRetryMax; after
+// replayMaxFailures consecutive failures the socket is torn down so the
+// reconnect path re-attaches and replays from scratch. Until a replay succeeds
+// the subscription is catching up and holds back live events, so giving up
+// silently would swallow every later event until the next reconnect.
+const (
+	replayRetryMin    = 250 * time.Millisecond
+	replayRetryMax    = 5 * time.Second
+	replayMaxFailures = 5
+)
 
 // FilterClause is one subscription filter predicate. Op is one of eq, ne, lt,
 // lte, gt, gte, contains, prefix; Field is a top-level payload key.
@@ -44,6 +58,12 @@ type SubscribeSpec struct {
 	Delivery string `json:"delivery,omitempty"`
 	// TTLMs expires the subscription after this many milliseconds.
 	TTLMs int64 `json:"ttl_ms,omitempty"`
+	// Ephemeral makes a one-shot subscription that only delivers events
+	// created after it: it neither reads nor writes the cursor store, and gets
+	// a unique local key, so concurrent subscriptions with the same spec do
+	// not collide. gateway.wait_for_event uses it; a durable subscription (the
+	// default) resumes from its persisted cursor across gateway restarts.
+	Ephemeral bool `json:"-"`
 }
 
 // Key is the stable local identity of a subscription spec. It is the lookup key
@@ -97,6 +117,9 @@ const (
 	NoticeReconnect NoticeKind = "reconnect"
 	// NoticeConnected reports that subscriptions are attached on a fresh socket.
 	NoticeConnected NoticeKind = "connected"
+	// NoticeJournalReset reports that the phone's journal restarted below a
+	// subscription's cursor (hello.last_event_id), so the cursor was reset.
+	NoticeJournalReset NoticeKind = "journal_reset"
 )
 
 // Notice is an out-of-band event-channel signal surfaced to the caller.
@@ -129,7 +152,12 @@ type CursorStore interface {
 	// a local subscription key. Missing keys return ("", 0, nil).
 	LoadSubscription(key string) (subscriptionID string, ackCursor int64, err error)
 	// SaveSubscription persists the subscription id and ack cursor for a key.
+	// For an unchanged subscription id the stored cursor only moves forward; a
+	// new subscription id replaces it.
 	SaveSubscription(key, subscriptionID string, ackCursor int64) error
+	// DeleteSubscription forgets a key, so the next subscription for it starts
+	// clean. Missing keys are not an error.
+	DeleteSubscription(key string) error
 }
 
 // MemoryCursorStore is an in-process CursorStore, used when no SQLite store is
@@ -164,7 +192,18 @@ func (s *MemoryCursorStore) LoadSubscription(key string) (string, int64, error) 
 func (s *MemoryCursorStore) SaveSubscription(key, subID string, cursor int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if old, ok := s.m[key]; ok && old.subID == subID && old.cursor > cursor {
+		cursor = old.cursor
+	}
 	s.m[key] = memCursor{subID: subID, cursor: cursor}
+	return nil
+}
+
+// DeleteSubscription implements CursorStore.
+func (s *MemoryCursorStore) DeleteSubscription(key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.m, key)
 	return nil
 }
 
@@ -188,10 +227,16 @@ type subscription struct {
 	// dropped event is re-delivered by the next replay rather than lost.
 	ackCursor int64
 	closed    bool
+	// durable subscriptions persist their id and cursor in the CursorStore;
+	// ephemeral ones (SubscribeSpec.Ephemeral) never touch it.
+	durable bool
 	// While catching up, live events must not advance the cumulative cursor
 	// past older events still in the journal. One bounded worker drains replay.
-	catchingUp     bool
-	recovering     bool
+	catchingUp bool
+	// recoverGen is the connection generation of the running recovery worker,
+	// or 0 when none runs. Keying it by generation means a worker still winding
+	// down on a dead socket cannot stop a fresh one starting on the next.
+	recoverGen     uint64
 	pendingThrough int64
 	// attachedGen is the connection generation this subscription is bound to.
 	// It stops Subscribe and attachAll from both subscribing the same spec when
@@ -208,8 +253,10 @@ type subscription struct {
 // replays from the persisted ack cursor, de-duplicates by event id, honours
 // gap frames by issuing a replay, and surfaces bye and truncated as notices.
 //
-// The protocol's client frames carry no request id, so the client serializes
-// its requests and matches each reply by frame type.
+// The client serializes its requests. Each carries a "ref" the runtime echoes on
+// its reply, which is how a reply (and above all an error frame) is matched to
+// its request; against a runtime that echoes no ref the client falls back to
+// matching by frame type.
 type EventClient struct {
 	baseURL  string
 	token    string
@@ -234,6 +281,24 @@ type EventClient struct {
 	connGen uint64
 	// attached is true while a socket is up with every subscription bound.
 	attached bool
+	// nextRef numbers request refs.
+	nextRef uint64
+	// refsEchoed is set once the runtime on the current socket has echoed a
+	// ref. From then on an error frame without a ref is not a reply to the
+	// outstanding request and is not handed to it.
+	refsEchoed bool
+	// helloSeen and highWater describe the phone's journal on the current
+	// socket: highWater is the hello frame's last_event_id, raised by every
+	// event id seen since. A cursor above it predates a journal reset.
+	helloSeen bool
+	highWater int64
+
+	// reqTimeout, replayRetryMin, replayRetryMax and replayMaxFailures are the
+	// package defaults, held per client so tests can shorten them.
+	reqTimeout        time.Duration
+	replayRetryMin    time.Duration
+	replayRetryMax    time.Duration
+	replayMaxFailures int
 
 	stopOnce  sync.Once
 	stop      chan struct{}
@@ -243,7 +308,9 @@ type EventClient struct {
 // replyWaiter is a single outstanding request awaiting a typed reply.
 type replyWaiter struct {
 	want string
-	ch   chan json.RawMessage
+	// ref is the request's ref, or "" for a waiter that matches by type only.
+	ref string
+	ch  chan json.RawMessage
 }
 
 // EventOptions configures an EventClient.
@@ -271,6 +338,11 @@ func NewEventClient(opts EventOptions) *EventClient {
 		subs:      map[string]*subscription{},
 		stop:      make(chan struct{}),
 		connected: make(chan struct{}),
+
+		reqTimeout:        requestTimeout,
+		replayRetryMin:    replayRetryMin,
+		replayRetryMax:    replayRetryMax,
+		replayMaxFailures: replayMaxFailures,
 	}
 	if c.store == nil {
 		c.store = NewMemoryCursorStore()
@@ -381,6 +453,9 @@ func (c *EventClient) session(ctx context.Context) error {
 	c.sessionCtx = sessCtx
 	c.waiter = nil
 	c.connGen++
+	c.refsEchoed = false
+	c.helloSeen = false
+	c.highWater = 0
 	for _, sub := range c.subs {
 		sub.catchingUp = true
 	}
@@ -466,6 +541,10 @@ type frameEnvelope struct {
 	Type           string          `json:"type"`
 	SubscriptionID string          `json:"subscription_id"`
 	Event          json.RawMessage `json:"event"`
+	// Ref echoes the request's ref on a reply.
+	Ref json.RawMessage `json:"ref"`
+	// hello
+	LastEventID int64 `json:"last_event_id"`
 	// replay_result
 	Events              []Event `json:"events"`
 	NextSinceID         int64   `json:"next_since_id"`
@@ -488,7 +567,13 @@ func (c *EventClient) handleFrame(ctx context.Context, raw []byte) {
 		return
 	}
 
+	ref := frameRef(env.Ref)
+
 	switch env.Type {
+	case "hello":
+		c.handleHello(env.LastEventID)
+		return
+
 	case "event":
 		var ev Event
 		if err := json.Unmarshal(env.Event, &ev); err != nil {
@@ -496,6 +581,7 @@ func (c *EventClient) handleFrame(ctx context.Context, raw []byte) {
 			return
 		}
 		ev.SubscriptionID = env.SubscriptionID
+		c.raiseHighWater(ev.ID)
 		c.deliver(ctx, env.SubscriptionID, ev)
 		return
 
@@ -512,13 +598,14 @@ func (c *EventClient) handleFrame(ctx context.Context, raw []byte) {
 		}
 		for _, ev := range env.Events {
 			ev.SubscriptionID = env.SubscriptionID
+			c.raiseHighWater(ev.ID)
 			if !c.deliverEvent(ctx, env.SubscriptionID, ev, true) {
 				// Stop this batch at the first overflow: even if a consumer frees
 				// space now, later entries cannot be cumulatively acknowledged.
 				break
 			}
 		}
-		c.resolve(env.Type, raw)
+		c.resolve(env.Type, ref, raw)
 		return
 
 	case "gap":
@@ -536,26 +623,71 @@ func (c *EventClient) handleFrame(ctx context.Context, raw []byte) {
 
 	case "error":
 		c.notify(Notice{Kind: NoticeError, SubscriptionID: env.SubscriptionID, Message: env.Code + ": " + env.Message})
-		// An error frame also terminates whatever request is outstanding.
-		c.resolveAny(raw)
+		// An error frame terminates the outstanding request only when it is
+		// that request's reply.
+		c.resolveError(ref, raw)
 		return
 
 	case "subscribed", "unsubscribed", "subscriptions", "pong":
-		c.resolve(env.Type, raw)
+		c.resolve(env.Type, ref, raw)
 		return
 	}
 }
 
-// resolve hands raw to the outstanding request if it is waiting for this type.
-func (c *EventClient) resolve(typ string, raw []byte) {
+// frameRef renders a reply's echoed ref. The client sends string refs, which
+// come back as JSON strings; anything else is compared by its raw text.
+func frameRef(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	return string(raw)
+}
+
+// resolve hands raw to the outstanding request if it is this reply's request:
+// the echoed ref matches, or, when the reply carries no ref, the type does.
+func (c *EventClient) resolve(typ, ref string, raw []byte) {
 	c.mu.Lock()
+	if ref != "" {
+		// Only this client sends refs on this socket, so any echoed ref
+		// proves the runtime echoes them.
+		c.refsEchoed = true
+	}
 	w := c.waiter
-	if w == nil || w.want != typ {
+	if w == nil || w.want != typ || (ref != "" && ref != w.ref) {
 		c.mu.Unlock()
 		return
 	}
 	c.waiter = nil
 	c.mu.Unlock()
+	c.handOff(w, raw)
+}
+
+// resolveError hands an error frame to the outstanding request when it is that
+// request's reply. With a ref, the ref decides. Without one it is that
+// request's reply only on a runtime that echoes no refs at all; once refs are
+// echoed, a ref-less error (an unparseable frame, an internal fault) belongs to
+// no request, and failing an unrelated pending replay with it would leave that
+// subscription catching up for nothing.
+func (c *EventClient) resolveError(ref string, raw []byte) {
+	c.mu.Lock()
+	if ref != "" {
+		c.refsEchoed = true
+	}
+	w := c.waiter
+	if w == nil || (ref != "" && ref != w.ref) || (ref == "" && c.refsEchoed && w.ref != "") {
+		c.mu.Unlock()
+		return
+	}
+	c.waiter = nil
+	c.mu.Unlock()
+	c.handOff(w, raw)
+}
+
+func (c *EventClient) handOff(w *replyWaiter, raw []byte) {
 	cp := make([]byte, len(raw))
 	copy(cp, raw)
 	select {
@@ -564,20 +696,55 @@ func (c *EventClient) resolve(typ string, raw []byte) {
 	}
 }
 
-// resolveAny hands raw to the outstanding request whatever it was waiting for.
-func (c *EventClient) resolveAny(raw []byte) {
+// raiseHighWater records that event id exists in the phone's current journal.
+func (c *EventClient) raiseHighWater(id int64) {
 	c.mu.Lock()
-	w := c.waiter
-	c.waiter = nil
-	c.mu.Unlock()
-	if w == nil {
-		return
+	if id > c.highWater {
+		c.highWater = id
 	}
-	cp := make([]byte, len(raw))
-	copy(cp, raw)
-	select {
-	case w.ch <- cp:
-	default:
+	c.mu.Unlock()
+}
+
+// handleHello processes the runtime's first frame on a socket. Its
+// last_event_id is the newest id in the phone's journal; a subscription whose
+// cursor is above it was acknowledged against a journal that no longer exists
+// (app data cleared, journal rebuilt), and keeping that cursor would make the
+// client drop every new event as a duplicate. Such cursors restart from zero.
+//
+// hello is sent before the runtime reads any client frame, and every replay on
+// a socket follows at least one reply on it (list or subscribe), so this always
+// runs before the socket's first replay reads a cursor.
+func (c *EventClient) handleHello(lastEventID int64) {
+	type reset struct {
+		key, subID string
+		durable    bool
+	}
+	var resets []reset
+	c.mu.Lock()
+	c.helloSeen = true
+	if lastEventID > c.highWater {
+		c.highWater = lastEventID
+	}
+	for _, sub := range c.subs {
+		if sub.ackCursor > lastEventID || sub.lastSeen > lastEventID {
+			sub.ackCursor, sub.lastSeen, sub.pendingThrough = 0, 0, 0
+			resets = append(resets, reset{key: sub.key, subID: sub.subID, durable: sub.durable})
+		}
+	}
+	c.mu.Unlock()
+	for _, r := range resets {
+		if r.durable {
+			// Delete first: for an unchanged subscription id the store keeps
+			// the larger cursor.
+			_ = c.store.DeleteSubscription(r.key)
+			if r.subID != "" {
+				_ = c.store.SaveSubscription(r.key, r.subID, 0)
+			}
+		}
+		c.notify(Notice{
+			Kind: NoticeJournalReset, SubscriptionID: r.subID, ToID: lastEventID,
+			Message: "phone journal restarted below this subscription's cursor; replaying from the start",
+		})
 	}
 }
 
@@ -609,7 +776,7 @@ func (c *EventClient) deliverEvent(ctx context.Context, subID string, ev Event, 
 		c.mu.Unlock()
 		return false
 	}
-	key := sub.key
+	key, durable := sub.key, sub.durable
 	c.mu.Unlock()
 
 	if c.recorder != nil {
@@ -652,7 +819,9 @@ func (c *EventClient) deliverEvent(ctx context.Context, subID string, ev Event, 
 		return false
 	}
 
-	_ = c.store.SaveSubscription(key, subID, cursor)
+	if durable {
+		_ = c.store.SaveSubscription(key, subID, cursor)
+	}
 	_ = c.send(ctx, map[string]any{"type": "ack", "subscription_id": subID, "through_id": cursor})
 	return true
 }
@@ -683,16 +852,20 @@ func (c *EventClient) send(ctx context.Context, frame map[string]any) error {
 	return conn.Write(ctx, websocket.MessageText, raw)
 }
 
-// request writes a frame and waits for a reply of the expected type. Requests
-// are serialized because the protocol's frames carry no request id.
+// request writes a frame and waits for its reply. The frame is stamped with a
+// fresh ref, which the runtime echoes on the reply (and on an error answering
+// it). Requests are still serialized, so a runtime that echoes no ref can be
+// matched by reply type.
 func (c *EventClient) request(ctx context.Context, want string, frame map[string]any) ([]byte, error) {
 	c.reqMu.Lock()
 	defer c.reqMu.Unlock()
 
-	w := &replyWaiter{want: want, ch: make(chan json.RawMessage, 1)}
 	c.mu.Lock()
+	c.nextRef++
+	w := &replyWaiter{want: want, ref: fmt.Sprintf("g%d", c.nextRef), ch: make(chan json.RawMessage, 1)}
 	c.waiter = w
 	c.mu.Unlock()
+	frame["ref"] = w.ref
 
 	clear := func() {
 		c.mu.Lock()
@@ -707,7 +880,7 @@ func (c *EventClient) request(ctx context.Context, want string, frame map[string
 		return nil, err
 	}
 
-	timer := time.NewTimer(requestTimeout)
+	timer := time.NewTimer(c.reqTimeout)
 	defer timer.Stop()
 	select {
 	case raw := <-w.ch:
@@ -728,11 +901,23 @@ func (c *EventClient) request(ctx context.Context, want string, frame map[string
 // events until the returned cancel function is called or the client stops.
 // Subscribing before the socket is up is fine: the subscription attaches on the
 // next successful connect.
+//
+// A durable spec (the default) resumes from the subscription id and cursor
+// persisted for its Key, and only one durable subscription per spec may be
+// active. An ephemeral spec starts fresh every time, and any number may be
+// active at once.
 func (c *EventClient) Subscribe(ctx context.Context, spec SubscribeSpec) (<-chan Event, func(), error) {
 	key := spec.Key()
-	subID, cursor, err := c.store.LoadSubscription(key)
-	if err != nil {
-		return nil, nil, err
+	durable := !spec.Ephemeral
+	var subID string
+	var cursor int64
+	if durable {
+		var err error
+		if subID, cursor, err = c.store.LoadSubscription(key); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		key += "#" + randomSuffix()
 	}
 	sub := &subscription{
 		spec:      spec,
@@ -741,15 +926,25 @@ func (c *EventClient) Subscribe(ctx context.Context, spec SubscribeSpec) (<-chan
 		subID:     subID,
 		ackCursor: cursor,
 		lastSeen:  cursor,
+		durable:   durable,
 	}
 	c.mu.Lock()
 	if _, exists := c.subs[key]; exists {
 		c.mu.Unlock()
 		return nil, nil, fmt.Errorf("event client: already subscribed to %s", spec.TopicGlob)
 	}
+	// A cursor above anything the current journal holds predates a journal
+	// reset (see handleHello).
+	stale := c.helloSeen && cursor > c.highWater
+	if stale {
+		sub.ackCursor, sub.lastSeen = 0, 0
+	}
 	c.subs[key] = sub
 	connected := c.conn != nil
 	c.mu.Unlock()
+	if stale {
+		_ = c.store.DeleteSubscription(key)
+	}
 
 	// attach is idempotent per connection generation, so it does not matter
 	// whether this call or a concurrent attachAll on a freshly dialled socket
@@ -781,6 +976,11 @@ func (c *EventClient) Subscribe(ctx context.Context, spec SubscribeSpec) (<-chan
 			delete(c.subs, key)
 			close(s.out)
 			c.mu.Unlock()
+			if s.durable {
+				// The phone-side subscription is going away, so its cursor
+				// means nothing; a later subscription to the spec starts clean.
+				_ = c.store.DeleteSubscription(key)
+			}
 			if id != "" {
 				uctx, ucancel := context.WithTimeout(context.Background(), 5*time.Second)
 				_, _ = c.request(uctx, "unsubscribed", map[string]any{"type": "unsubscribe", "subscription_id": id})
@@ -879,17 +1079,31 @@ func (c *EventClient) attach(ctx context.Context, sub *subscription) error {
 		}
 		c.mu.Lock()
 		sub.subID = resp.SubscriptionID
-		key, cursor := sub.key, sub.ackCursor
+		// A new phone-side subscription can never replay behind its creation
+		// point, so that is where its cursor starts. Carrying the old cursor
+		// over would, after a phone journal reset, drop the new subscription's
+		// low-numbered events as duplicates.
+		sub.ackCursor = resp.CreatedAtEventID
+		sub.lastSeen = resp.CreatedAtEventID
+		sub.pendingThrough = 0
+		key, cursor, durable := sub.key, sub.ackCursor, sub.durable
 		c.mu.Unlock()
-		_ = c.store.SaveSubscription(key, resp.SubscriptionID, cursor)
+		if durable {
+			_ = c.store.SaveSubscription(key, resp.SubscriptionID, cursor)
+		}
 	}
 
-	if err := c.replay(ctx, sub); err != nil {
-		return err
-	}
 	c.mu.Lock()
 	sub.attachedGen = gen
 	c.mu.Unlock()
+	if err := c.replay(ctx, sub); err != nil {
+		// The subscription is bound; only its catch-up failed. Hand it to the
+		// recovery worker, which retries and, if the socket stays unusable,
+		// reconnects. Failing the attach instead would leave a phone-side
+		// subscription behind with nothing local to clean it up.
+		c.notify(Notice{Kind: NoticeError, SubscriptionID: sub.subID, Message: "replay failed; retrying: " + err.Error()})
+		c.recoverReplay(ctx, sub)
+	}
 	return nil
 }
 
@@ -934,6 +1148,9 @@ func (c *EventClient) replay(ctx context.Context, sub *subscription) error {
 		if err = json.Unmarshal(raw, &reply); err == nil && reply.Type != "replay_result" {
 			err = fmt.Errorf("event client: replay failed: %s %s", reply.Code, reply.Message)
 		}
+		if err == nil && reply.SubscriptionID != id {
+			err = fmt.Errorf("event client: replay_result for subscription %q, requested %q", reply.SubscriptionID, id)
+		}
 		if err == nil {
 			c.mu.Lock()
 			// A short page is the end only when everything in it fit and no
@@ -958,48 +1175,97 @@ func (c *EventClient) replay(ctx context.Context, sub *subscription) error {
 
 // recoverReplay retries in bounded pages once consumers make room. It keeps
 // the socket reader available for ping/cancellation, and never starts more
-// than one worker per subscription.
+// than one worker per subscription and connection.
+//
+// A failed replay (timeout, an error frame, a send error) is retried with
+// bounded exponential backoff; after replayMaxFailures in a row the worker
+// closes the socket, so the reconnect path re-attaches and replays. The worker
+// only stops once the subscription has caught up, is cancelled, or its socket
+// is gone (and with it the reconnect that will catch it up), so catchingUp
+// can never stay set with nobody working to clear it.
 func (c *EventClient) recoverReplay(ctx context.Context, sub *subscription) {
 	c.mu.Lock()
-	if sub.recovering || sub.closed || c.conn == nil {
+	if sub.closed || c.conn == nil || sub.recoverGen == c.connGen {
 		c.mu.Unlock()
 		return
 	}
-	sub.recovering = true
+	gen := c.connGen
+	sub.recoverGen = gen
+	conn := c.conn
 	// Subscribe's request context can end as soon as attachment returns. The
 	// recovery worker belongs to the connection, not to that individual call.
 	ctx = c.sessionCtx
 	c.mu.Unlock()
 	go func() {
-		defer func() { c.mu.Lock(); sub.recovering = false; c.mu.Unlock() }()
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
+		// releaseLocked must run under c.mu, in the same critical section as
+		// the check that decided to stop, so a catch-up that starts right
+		// after the check finds no worker registered and starts a new one.
+		releaseLocked := func() {
+			if sub.recoverGen == gen {
+				sub.recoverGen = 0
+			}
+		}
+		release := func() { c.mu.Lock(); releaseLocked(); c.mu.Unlock() }
+		const poll = 100 * time.Millisecond
+		wait := poll
+		failures := 0
 		for {
+			timer := time.NewTimer(wait)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
+				release()
 				return
 			case <-c.stop:
+				timer.Stop()
+				release()
 				return
-			case <-ticker.C:
+			case <-timer.C:
 			}
+			wait = poll
 			c.mu.Lock()
-			done := sub.closed || !sub.catchingUp
+			if sub.closed || !sub.catchingUp {
+				releaseLocked()
+				c.mu.Unlock()
+				return
+			}
 			space := len(sub.out) < cap(sub.out)
 			c.mu.Unlock()
-			if done {
+			if !space {
+				continue
+			}
+			err := c.replay(ctx, sub)
+			if err == nil {
+				failures = 0
+				continue
+			}
+			failures++
+			if failures >= c.replayMaxFailures {
+				release()
+				c.notify(Notice{Kind: NoticeError, SubscriptionID: sub.subIDSnapshot(c),
+					Message: fmt.Sprintf("replay failed %d times in a row; reconnecting: %v", failures, err)})
+				// Closing the socket ends this session; the reconnect marks
+				// every subscription as catching up and replays it on attach.
+				conn.CloseNow()
 				return
 			}
-			if space {
-				if err := c.replay(ctx, sub); err != nil {
-					return
-				}
+			wait = c.replayRetryMin << (failures - 1)
+			if wait > c.replayRetryMax || wait <= 0 {
+				wait = c.replayRetryMax
 			}
 		}
 	}()
 }
 
+// subIDSnapshot reads the subscription's phone-side id under c.mu.
+func (s *subscription) subIDSnapshot(c *EventClient) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return s.subID
+}
+
 // replayFor issues a replay for a phone-side subscription id, recovering from a
-// gap frame.
+// gap frame. A failed replay is handed to the recovery worker.
 func (c *EventClient) replayFor(ctx context.Context, subID string) {
 	c.mu.Lock()
 	sub := c.subBySubIDLocked(subID)
@@ -1007,7 +1273,18 @@ func (c *EventClient) replayFor(ctx context.Context, subID string) {
 	if sub == nil {
 		return
 	}
-	_ = c.replay(ctx, sub)
+	if err := c.replay(ctx, sub); err != nil {
+		c.recoverReplay(ctx, sub)
+	}
+}
+
+// randomSuffix returns 16 random hex digits for a unique local key.
+func randomSuffix() string {
+	var b [8]byte
+	if _, err := crand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // Ping issues a heartbeat and waits for the pong.

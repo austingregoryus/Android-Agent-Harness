@@ -282,7 +282,7 @@ func decodeOpenAIMessages(msgs []openAIMessage) []Message {
 				cm.Parts = append(cm.Parts, TextPart(s))
 			}
 			for _, tc := range m.ToolCalls {
-				cm.Parts = append(cm.Parts, ToolCallPart(tc.ID, tc.Function.Name, decodeArguments(tc.Function.Arguments)))
+				cm.Parts = append(cm.Parts, openAIToolCallPart(tc))
 			}
 			out = append(out, cm)
 		case "tool":
@@ -304,21 +304,12 @@ func deref(s *string) string {
 	return *s
 }
 
-// decodeArguments parses the JSON-string arguments field of a tool call.
-// Malformed arguments are surfaced under a "_raw" key rather than dropped, so
-// the agent can report what the model actually emitted.
-func decodeArguments(s string) map[string]any {
-	if strings.TrimSpace(s) == "" {
-		return map[string]any{}
-	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(s), &m); err != nil {
-		return map[string]any{"_raw": s}
-	}
-	if m == nil {
-		return map[string]any{}
-	}
-	return m
+// openAIToolCallPart converts one wire tool call. The arguments field is a JSON
+// document encoded as a string; when it does not parse as an object the part is
+// marked invalid (ArgsError carries what the model emitted) and its Args stay
+// empty, so nothing the model did not actually write can reach the phone.
+func openAIToolCallPart(tc openAIToolCall) Part {
+	return toolCallFromJSON(tc.ID, tc.Function.Name, json.RawMessage(tc.Function.Arguments))
 }
 
 // decodeOpenAIResponse converts a chat-completions response into a canonical
@@ -332,7 +323,7 @@ func decodeOpenAIResponse(name string, resp openAIResponse) GenerateResult {
 			msg.Parts = append(msg.Parts, TextPart(s))
 		}
 		for _, tc := range ch.Message.ToolCalls {
-			msg.Parts = append(msg.Parts, ToolCallPart(tc.ID, tc.Function.Name, decodeArguments(tc.Function.Arguments)))
+			msg.Parts = append(msg.Parts, openAIToolCallPart(tc))
 		}
 		switch ch.FinishReason {
 		case "stop":

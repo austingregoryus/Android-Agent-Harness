@@ -225,6 +225,14 @@ Policy rules you must follow:
 - A tool result with error "permission.missing" lists the Android permissions that must be granted first.
 - A tool result with error "capability.unavailable" or "capability.failed" means the phone cannot do it.
   Say so plainly rather than inventing a result.
+- A tool result with error "transport.outcome_unknown" or "protocol.invalid_result" means the call reached the
+  phone but no usable result came back: the action MAY HAVE HAPPENED. Do NOT retry blindly. Check the phone's
+  state with a read-only tool where one exists, or tell the user the outcome is unknown. If you do repeat the call,
+  repeat it exactly, with identical arguments: the phone recognises the identical call within this task and returns
+  the original outcome instead of acting twice. Never change the arguments to force another attempt.
+- A tool result with error "transport.not_sent" means the call never reached the phone and nothing happened.
+- A tool result with error "tool.invalid_arguments" means the arguments were not valid and the phone was not
+  called. Correct them before calling again.
 - Never claim an action happened unless a tool result confirms it.
 
 Answer the user's task using the tools. When you have the answer, reply with plain text and no tool calls.
@@ -409,13 +417,25 @@ func (a *Agent) Run(ctx context.Context, taskText string) (Result, error) {
 			if !known {
 				toolMsg.Parts = append(toolMsg.Parts, provider.ToolResultPart(
 					call.ID,
-					fmt.Sprintf(`{"error":"tool.unknown","detail":%q}`, call.Name),
+					errorBody(map[string]any{"error": errToolUnknown, "detail": call.Name}),
 					true,
 				))
 				res.Trace = append(res.Trace, ToolTrace{
 					Turn: turn, Provider: asst.Provider, Name: call.Name, Args: call.Args,
-					OK: false, ErrorCode: "tool.unknown",
+					OK: false, ErrorCode: errToolUnknown,
 					Summary: "tool is not exposed by the phone (or is filtered by the allowlist)",
+				})
+				continue
+			}
+			if call.ArgsError != "" {
+				// The model's arguments did not parse, so Args holds nothing the
+				// model actually wrote. Executing it would send the phone a call
+				// with empty (or guessed) arguments; the model gets to fix it.
+				toolMsg.Parts = append(toolMsg.Parts, provider.ToolResultPart(
+					call.ID, errorBody(map[string]any{"error": errInvalidArguments, "detail": call.ArgsError}), true))
+				res.Trace = append(res.Trace, ToolTrace{
+					Turn: turn, Provider: asst.Provider, Name: call.Name, Args: call.Args,
+					OK: false, ErrorCode: errInvalidArguments, Summary: call.ArgsError,
 				})
 				continue
 			}
@@ -428,12 +448,13 @@ func (a *Agent) Run(ctx context.Context, taskText string) (Result, error) {
 			if cerr != nil {
 				// A transport failure against the phone is not a provider
 				// failure: it is reported to the model as a tool error so the
-				// same provider can decide what to do next turn.
-				body := fmt.Sprintf(`{"error":"transport.failed","detail":%q}`, cerr.Error())
-				toolMsg.Parts = append(toolMsg.Parts, provider.ToolResultPart(call.ID, body, true))
+				// same provider can decide what to do next turn. Whether the
+				// phone may have acted decides what that error says.
+				code, body := callFailure(cerr)
+				toolMsg.Parts = append(toolMsg.Parts, provider.ToolResultPart(call.ID, errorBody(body), true))
 				res.Trace = append(res.Trace, ToolTrace{
 					Turn: turn, Provider: asst.Provider, Name: call.Name, Args: call.Args,
-					OK: false, ErrorCode: "transport.failed", Summary: cerr.Error(), Duration: elapsed,
+					OK: false, ErrorCode: code, Summary: cerr.Error(), Duration: elapsed,
 				})
 				continue
 			}
@@ -454,8 +475,71 @@ func (a *Agent) Run(ctx context.Context, taskText string) (Result, error) {
 	return res, err
 }
 
+// Tool-result error codes the agent produces itself.
+const (
+	errInvalidArguments = "tool.invalid_arguments"
+	errNotSent          = "transport.not_sent"
+	errOutcomeUnknown   = "transport.outcome_unknown"
+	errToolRejected     = "tool.rejected"
+	errToolUnknown      = "tool.unknown"
+)
+
+// outcomeUnknownAdvice is appended to every result whose side effect may or may
+// not have happened.
+const outcomeUnknownAdvice = "the phone may have executed this call. Do not retry blindly: check its state first, " +
+	"and if you repeat the call use identical arguments so the phone returns the original outcome instead of acting twice"
+
+// callFailure classifies a CallTool error into the code and body the model sees.
+func callFailure(err error) (string, map[string]any) {
+	var ce *device.CallError
+	if !errors.As(err, &ce) {
+		return errOutcomeUnknown, map[string]any{"error": errOutcomeUnknown, "detail": err.Error() + "; " + outcomeUnknownAdvice}
+	}
+	switch ce.Kind {
+	case device.CallNotSent:
+		return errNotSent, map[string]any{"error": errNotSent, "detail": ce.Error() + "; the phone did not execute the call"}
+	case device.CallRejected:
+		// JSON-RPC errors come from the phone's dispatch checks, before anything ran.
+		code := errToolRejected
+		switch ce.RPCCode {
+		case -32602:
+			code = errInvalidArguments
+		case -32601:
+			code = errToolUnknown
+		}
+		return code, map[string]any{"error": code, "detail": ce.RPCMessage, "rpc_code": ce.RPCCode}
+	default:
+		body := map[string]any{
+			"error":          errOutcomeUnknown,
+			"detail":         ce.Error() + "; " + outcomeUnknownAdvice,
+			"correlation_id": ce.CorrelationID,
+		}
+		if ce.IdempotencyKey != "" {
+			body["idempotency_key"] = ce.IdempotencyKey
+		}
+		return errOutcomeUnknown, body
+	}
+}
+
+// errorBody renders an error object as the JSON the model sees.
+func errorBody(m map[string]any) string {
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return `{"error":"internal"}`
+	}
+	return string(raw)
+}
+
 // outcomeBody renders a tool outcome as the JSON the model sees.
 func outcomeBody(o device.ToolOutcome) string {
+	if o.ErrorCode == device.ErrInvalidResult {
+		// Whatever the phone's text said, it is not a confirmed result.
+		body := map[string]any{"error": o.ErrorCode, "detail": o.Detail + "; " + outcomeUnknownAdvice}
+		if o.CorrelationID != "" {
+			body["correlation_id"] = o.CorrelationID
+		}
+		return errorBody(body)
+	}
 	if o.Structured != nil {
 		if raw, err := json.Marshal(o.Structured); err == nil {
 			return string(raw)

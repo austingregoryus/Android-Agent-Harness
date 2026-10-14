@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"strconv"
 	"strings"
 	"sync"
@@ -141,8 +142,12 @@ type ToolOutcome struct {
 	Permissions []string
 	// Detail is set for capability.failed outcomes.
 	Detail string
-	// CorrelationID echoes _meta.correlationId.
+	// CorrelationID echoes _meta.correlationId, or the id the call was sent
+	// with when the phone echoed none.
 	CorrelationID string
+	// IdempotencyKey is the key the call was sent with, or "" for a read-only
+	// call. It is set by CallTool, not decoded.
+	IdempotencyKey string
 	// AuditID echoes _meta.auditId.
 	AuditID int64
 	// DurationMs echoes _meta.durationMs.
@@ -349,7 +354,22 @@ func (e *httpError) Error() string {
 	return fmt.Sprintf("phone returned HTTP %d: %s", e.Status, e.Body)
 }
 
+// maybeSentError marks a failure that happened after the request may have
+// reached the phone: the bytes were written (or a response, however broken,
+// came back), so the phone may have acted on it. Its Error text is the wrapped
+// error's, so callers that only print errors see no difference.
+type maybeSentError struct{ err error }
+
+func (e *maybeSentError) Error() string { return e.err.Error() }
+func (e *maybeSentError) Unwrap() error { return e.err }
+
 // post sends one JSON-RPC message to POST /mcp.
+//
+// Errors raised once the request may have been written are wrapped in
+// maybeSentError, so CallTool can tell "never reached the phone" from "the
+// phone may have executed it". HTTP 4xx answers are the runtime refusing the
+// request before dispatch (unknown session, auth, bad header) and stay plain;
+// 5xx answers can come from a handler that already ran and are wrapped.
 func (c *MCPClient) post(ctx context.Context, msg rpcRequest, isInitialize bool) (*rpcResponse, error) {
 	raw, err := json.Marshal(msg)
 	if err != nil {
@@ -364,7 +384,23 @@ func (c *MCPClient) post(ctx context.Context, msg rpcRequest, isInitialize bool)
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/mcp", bytes.NewReader(raw))
+	// wrote records whether the transport attempted to write the request at
+	// all. Until it has, a failure (dial, TLS, a cancelled context) cannot have
+	// reached the phone. A failed write still counts: some bytes may have left.
+	var wroteMu sync.Mutex
+	wrote := false
+	trace := &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) {
+		wroteMu.Lock()
+		wrote = true
+		wroteMu.Unlock()
+	}}
+	mayHaveSent := func() bool {
+		wroteMu.Lock()
+		defer wroteMu.Unlock()
+		return wrote
+	}
+	sent := func(err error) error { return &maybeSentError{err: err} }
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), http.MethodPost, c.baseURL+"/mcp", bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -386,12 +422,16 @@ func (c *MCPClient) post(ctx context.Context, msg rpcRequest, isInitialize bool)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("phone %s: %w", msg.Method, err)
+		err = fmt.Errorf("phone %s: %w", msg.Method, err)
+		if mayHaveSent() {
+			return nil, sent(err)
+		}
+		return nil, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return nil, fmt.Errorf("phone %s: read response: %w", msg.Method, err)
+		return nil, sent(fmt.Errorf("phone %s: read response: %w", msg.Method, err))
 	}
 
 	// Notifications are answered with 202 and an empty body.
@@ -399,28 +439,32 @@ func (c *MCPClient) post(ctx context.Context, msg rpcRequest, isInitialize bool)
 		return nil, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &httpError{Status: resp.StatusCode, Body: truncate(string(body), 400)}
+		he := &httpError{Status: resp.StatusCode, Body: truncate(string(body), 400)}
+		if resp.StatusCode >= 500 {
+			return nil, sent(he)
+		}
+		return nil, he
 	}
 	if len(bytes.TrimSpace(body)) == 0 {
 		if msg.ID == nil {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("phone %s: missing JSON-RPC response", msg.Method)
+		return nil, sent(fmt.Errorf("phone %s: missing JSON-RPC response", msg.Method))
 	}
 	var out rpcResponse
 	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, fmt.Errorf("phone %s: decode response: %w", msg.Method, err)
+		return nil, sent(fmt.Errorf("phone %s: decode response: %w", msg.Method, err))
 	}
 	wantID, _ := json.Marshal(msg.ID)
 	gotID, _ := json.Marshal(out.ID)
 	if out.JSONRPC != JSONRPCVersion || !bytes.Equal(wantID, gotID) {
-		return nil, fmt.Errorf("phone %s: invalid JSON-RPC version or response id", msg.Method)
+		return nil, sent(fmt.Errorf("phone %s: invalid JSON-RPC version or response id", msg.Method))
 	}
 	if out.Error != nil {
 		return &out, out.Error
 	}
 	if len(out.Result) == 0 || bytes.Equal(bytes.TrimSpace(out.Result), []byte("null")) {
-		return nil, fmt.Errorf("phone %s: missing JSON-RPC result", msg.Method)
+		return nil, sent(fmt.Errorf("phone %s: missing JSON-RPC result", msg.Method))
 	}
 	if isInitialize {
 		if sid := resp.Header.Get("Mcp-Session-Id"); sid != "" {
@@ -453,6 +497,12 @@ func (c *MCPClient) call(ctx context.Context, method string, params any, out any
 			// The handshake gets the ordinary per-request bound, not the budget of the
 			// call that tripped the 404 (automation.run's can be minutes).
 			if ierr := c.reinitialize(withRequestTimeout(ctx, c.requestTimeout), gen); ierr != nil {
+				// The 404 means the call itself was refused, and initialize never
+				// carries it, so a broken handshake leaves the call unsent.
+				var ms *maybeSentError
+				if errors.As(ierr, &ms) {
+					ierr = ms.err
+				}
 				return fmt.Errorf("phone %s: session expired and re-initialize failed: %w", method, ierr)
 			}
 			resp, err = do()
@@ -464,7 +514,11 @@ func (c *MCPClient) call(ctx context.Context, method string, params any, out any
 	if out == nil || resp == nil || len(resp.Result) == 0 {
 		return nil
 	}
-	return json.Unmarshal(resp.Result, out)
+	if err := json.Unmarshal(resp.Result, out); err != nil {
+		// The phone answered, so it may well have acted; only the result is unreadable.
+		return &maybeSentError{err: fmt.Errorf("phone %s: decode result: %w", method, err)}
+	}
+	return nil
 }
 
 func isHTTPError(err error, target **httpError) bool {
@@ -590,13 +644,72 @@ func IdempotencyKey(correlationID, tool string, args map[string]any) (string, er
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// CallTool invokes a phone tool. Policy outcomes are returned as a ToolOutcome
-// with OK false and ErrorCode set; only transport and JSON-RPC failures are
-// returned as an error.
-func (c *MCPClient) CallTool(ctx context.Context, name string, args map[string]any, opts CallToolOptions) (ToolOutcome, error) {
-	if err := c.ensureSession(ctx); err != nil {
-		return ToolOutcome{}, err
+// CallErrorKind classifies a failed tools/call by what the phone may have done.
+type CallErrorKind int
+
+// Call error kinds.
+const (
+	// CallNotSent means the phone did not execute the call: the request was
+	// never written (no session, dial or TLS failure, cancelled first), or the
+	// runtime refused the HTTP request before dispatch (4xx). Retrying is safe.
+	CallNotSent CallErrorKind = iota
+	// CallOutcomeUnknown means the request may have reached the phone and the
+	// phone may have acted, but no usable result came back (a timeout or a
+	// dropped connection after the write, a 5xx, an undecodable response).
+	// Retrying with the same idempotency key is deduplicated by the phone;
+	// retrying with a different one may repeat the side effect.
+	CallOutcomeUnknown
+	// CallRejected means the phone answered with a JSON-RPC error. Those come
+	// from dispatch checks (unknown tool, invalid arguments) that run before
+	// anything executes.
+	CallRejected
+)
+
+// CallError is the error CallTool returns when it has no tool result. Policy
+// outcomes are not CallErrors; they arrive as a ToolOutcome.
+type CallError struct {
+	// Kind says whether the phone may have executed the call.
+	Kind CallErrorKind
+	// Tool is the tool name.
+	Tool string
+	// CorrelationID is the correlation id the call carried.
+	CorrelationID string
+	// IdempotencyKey is the key the call carried, or "" for read-only calls.
+	IdempotencyKey string
+	// RPCCode and RPCMessage are the phone's JSON-RPC error when Kind is
+	// CallRejected.
+	RPCCode    int
+	RPCMessage string
+	// Err is the underlying failure.
+	Err error
+}
+
+// Error implements the error interface.
+func (e *CallError) Error() string { return e.Err.Error() }
+
+// Unwrap exposes the underlying failure.
+func (e *CallError) Unwrap() error { return e.Err }
+
+// newCallError classifies a tools/call failure.
+func newCallError(err error, name, corrID, key string) *CallError {
+	ce := &CallError{Kind: CallNotSent, Tool: name, CorrelationID: corrID, IdempotencyKey: key, Err: err}
+	var re *rpcError
+	var ms *maybeSentError
+	switch {
+	case errors.As(err, &re):
+		ce.Kind = CallRejected
+		ce.RPCCode = re.Code
+		ce.RPCMessage = re.Message
+	case errors.As(err, &ms):
+		ce.Kind = CallOutcomeUnknown
 	}
+	return ce
+}
+
+// CallTool invokes a phone tool. Policy outcomes are returned as a ToolOutcome
+// with OK false and ErrorCode set; transport and JSON-RPC failures are returned
+// as a *CallError that says whether the phone may have executed the call.
+func (c *MCPClient) CallTool(ctx context.Context, name string, args map[string]any, opts CallToolOptions) (ToolOutcome, error) {
 	if args == nil {
 		args = map[string]any{}
 	}
@@ -604,12 +717,19 @@ func (c *MCPClient) CallTool(ctx context.Context, name string, args map[string]a
 	if opts.CorrelationID != "" {
 		meta["correlationId"] = opts.CorrelationID
 	}
+	key := ""
 	if !opts.ReadOnly {
-		key, err := IdempotencyKey(opts.CorrelationID, name, args)
+		var err error
+		key, err = IdempotencyKey(opts.CorrelationID, name, args)
 		if err != nil {
-			return ToolOutcome{}, fmt.Errorf("phone tools/call %s: idempotency key: %w", name, err)
+			return ToolOutcome{}, newCallError(fmt.Errorf("phone tools/call %s: idempotency key: %w", name, err), name, opts.CorrelationID, "")
 		}
 		meta["idempotencyKey"] = key
+	}
+	if err := c.ensureSession(ctx); err != nil {
+		// Initialize never carries the tool call, so whatever went wrong, the
+		// phone has not seen it.
+		return ToolOutcome{}, &CallError{Kind: CallNotSent, Tool: name, CorrelationID: opts.CorrelationID, IdempotencyKey: key, Err: err}
 	}
 	if opts.ApprovalWaitMs > 0 {
 		meta["approvalWaitMs"] = opts.ApprovalWaitMs
@@ -624,10 +744,20 @@ func (c *MCPClient) CallTool(ctx context.Context, name string, args map[string]a
 
 	var raw map[string]any
 	if err := c.call(withRequestTimeout(ctx, c.callTimeout(name, args)), "tools/call", params, &raw); err != nil {
-		return ToolOutcome{}, err
+		return ToolOutcome{}, newCallError(err, name, opts.CorrelationID, key)
 	}
-	return decodeToolOutcome(raw), nil
+	out := decodeToolOutcome(raw)
+	if out.CorrelationID == "" {
+		out.CorrelationID = opts.CorrelationID
+	}
+	out.IdempotencyKey = key
+	return out, nil
 }
+
+// ErrInvalidResult is the ToolOutcome.ErrorCode for a phone result the gateway
+// cannot interpret (no object structuredContent, a mistyped isError or error).
+// The call reached the phone, so its outcome is unknown.
+const ErrInvalidResult = "protocol.invalid_result"
 
 // decodeToolOutcome maps a tools/call result envelope into a typed outcome.
 func decodeToolOutcome(raw map[string]any) ToolOutcome {
@@ -636,14 +766,14 @@ func decodeToolOutcome(raw map[string]any) ToolOutcome {
 	// A valid RPC envelope alone is not evidence that an effect succeeded.
 	if _, ok := raw["structuredContent"].(map[string]any); !ok {
 		out.OK = false
-		out.ErrorCode = "protocol.invalid_result"
+		out.ErrorCode = ErrInvalidResult
 		out.Detail = "phone tool result is missing object structuredContent; outcome unknown"
 		return out
 	}
 	if v, exists := raw["isError"]; exists {
 		if _, ok := v.(bool); !ok {
 			out.OK = false
-			out.ErrorCode = "protocol.invalid_result"
+			out.ErrorCode = ErrInvalidResult
 			out.Detail = "phone tool result has invalid isError; outcome unknown"
 			return out
 		}
@@ -656,7 +786,7 @@ func decodeToolOutcome(raw map[string]any) ToolOutcome {
 		if value, exists := sc["error"]; exists && value != nil {
 			if _, valid := value.(string); !valid {
 				out.OK = false
-				out.ErrorCode = "protocol.invalid_result"
+				out.ErrorCode = ErrInvalidResult
 				out.Detail = "phone tool result has invalid error field; outcome unknown"
 				return out
 			}

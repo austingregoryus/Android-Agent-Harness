@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -246,16 +248,19 @@ func encodeAnthropicMessages(msgs []Message, providerName string) []anthropicMes
 			continue
 		case RoleAssistant:
 			blocks := make([]anthropicBlock, 0, len(m.Parts))
-			// Provider-bound blocks come first: the Messages API requires an
-			// assistant turn produced with extended thinking to open with its
-			// thinking block. OpaqueParts returns nothing unless the whole
-			// message was produced by this provider, so a transcript that
-			// failed over from another provider replays without them.
-			for _, part := range m.OpaqueParts(providerName) {
-				blocks = append(blocks, anthropicBlock{raw: part.Raw})
-			}
+			// Parts are emitted in their stored order, which is the order the
+			// API sent them: with interleaved thinking a turn can be [thinking,
+			// text, thinking, tool_use], and the Messages API rejects a replay
+			// that moves a thinking block. Provider-bound blocks are replayed
+			// only when the whole message was produced by this provider, so a
+			// transcript that failed over from another one replays without them.
+			ownBlocks := providerName != "" && m.Provider == providerName
 			for _, part := range m.Parts {
 				switch part.Type {
+				case PartOpaque:
+					if ownBlocks && part.Provider == providerName && len(part.Raw) > 0 {
+						blocks = append(blocks, anthropicBlock{raw: part.Raw})
+					}
 				case PartText:
 					if part.Text == "" {
 						continue
@@ -264,7 +269,7 @@ func encodeAnthropicMessages(msgs []Message, providerName string) []anthropicMes
 				case PartToolCall:
 					blocks = append(blocks, anthropicBlock{
 						Type:  "tool_use",
-						ID:    part.ID,
+						ID:    anthropicToolID(part.ID),
 						Name:  part.Name,
 						Input: encodeArgs(part.Args),
 					})
@@ -286,7 +291,7 @@ func encodeAnthropicMessages(msgs []Message, providerName string) []anthropicMes
 				case PartToolResult:
 					blocks = append(blocks, anthropicBlock{
 						Type:      "tool_result",
-						ToolUseID: part.CallID,
+						ToolUseID: anthropicToolID(part.CallID),
 						Content:   part.Content,
 						IsError:   part.IsError,
 					})
@@ -307,6 +312,40 @@ func encodeAnthropicMessages(msgs []Message, providerName string) []anthropicMes
 	return out
 }
 
+// anthropicToolID returns a tool_use id the Messages API accepts. It must match
+// ^[a-zA-Z0-9_-]+$, and a transcript that failed over from another provider can
+// carry ids that do not (older Gemini transcripts minted "call_0_device.get_info").
+// The mapping is deterministic, so a tool_use and its tool_result stay paired,
+// and the digest keeps ids apart that sanitize to the same prefix.
+func anthropicToolID(id string) string {
+	if id == "" {
+		return id
+	}
+	valid := true
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
+			valid = false
+			break
+		}
+	}
+	if valid {
+		return id
+	}
+	sum := sha256.Sum256([]byte(id))
+	var b strings.Builder
+	for _, c := range id {
+		if b.Len() >= 40 {
+			break
+		}
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-' {
+			b.WriteRune(c)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String() + "_" + hex.EncodeToString(sum[:6])
+}
+
 // decodeAnthropicMessages converts Messages API wire messages back into the
 // canonical transcript. Tool-result blocks are recovered with RoleTool.
 func decodeAnthropicMessages(msgs []anthropicMessage, providerName string) []Message {
@@ -319,7 +358,7 @@ func decodeAnthropicMessages(msgs []anthropicMessage, providerName string) []Mes
 				case "text":
 					cm.Parts = append(cm.Parts, TextPart(b.Text))
 				case "tool_use":
-					cm.Parts = append(cm.Parts, ToolCallPart(b.ID, b.Name, decodeArgs(b.Input)))
+					cm.Parts = append(cm.Parts, toolCallFromJSON(b.ID, b.Name, b.Input))
 				case blockThinking, blockRedactedThinking:
 					if len(b.raw) > 0 && providerName != "" {
 						cm.Parts = append(cm.Parts, OpaquePart(providerName, b.raw))
@@ -396,7 +435,7 @@ func decodeAnthropicResponse(name string, resp anthropicResponse) GenerateResult
 		case "text":
 			msg.Parts = append(msg.Parts, TextPart(b.Text))
 		case "tool_use":
-			msg.Parts = append(msg.Parts, ToolCallPart(b.ID, b.Name, decodeArgs(b.Input)))
+			msg.Parts = append(msg.Parts, toolCallFromJSON(b.ID, b.Name, b.Input))
 		case blockThinking, blockRedactedThinking:
 			if len(b.raw) > 0 {
 				msg.Parts = append(msg.Parts, OpaquePart(name, b.raw))
