@@ -86,7 +86,7 @@ def main() -> None:
     rt.init()
     c = Check(rt)
 
-    _, body = rt._post({"jsonrpc": "2.0", "id": 9, "method": "tools/list", "params": {}}, rt.session)
+    body = rt.request("tools/list", {}, 9)
     tools = sorted(t["name"] for t in body["result"]["tools"])
     fam: dict = {}
     for t in tools:
@@ -158,8 +158,7 @@ def main() -> None:
     # without a tap by default, so the old probe - send a text and expect it to be stopped - would now SEND it.
     PROBE_NUMBER = "+15550100000"
     t0 = time.time()
-    _, body = rt._post({"jsonrpc": "2.0", "id": 9, "method": "resources/read",
-                        "params": {"uri": "phone://policy"}}, rt.session)
+    body = rt.request("resources/read", {"uri": "phone://policy"}, 9)
     sms_needs_approval = False  # safe default: skip the probe when the policy can't be read at all
     try:
         pol = json.loads(body["result"]["contents"][0]["text"])

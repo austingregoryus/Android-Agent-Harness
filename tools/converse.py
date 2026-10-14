@@ -178,7 +178,37 @@ def pinned_ssl_context(base: str, pin: Optional[str]) -> ssl.SSLContext:
         raise SystemExit(f"TLS pin mismatch for {host}: got {got[:12]}…, expected {want[:12]}… — refusing to connect")
     ctx = ssl.create_default_context(cadata=pem)
     ctx.check_hostname = False
+    # Python 3.13 turns on VERIFY_X509_STRICT, which rejects a self-signed cert without CA extensions (an X.509
+    # v1 cert) as "invalid CA certificate". Strict mode checks how a CA cert is built; here the one trusted cert
+    # is the pinned leaf, so it adds nothing and only breaks the connection.
+    strict = getattr(ssl, "VERIFY_X509_STRICT", 0)
+    if strict and ctx.verify_flags & strict:
+        ctx.verify_flags &= ~strict
     return ctx
+
+
+class McpHttpError(RuntimeError):
+    """A non-2xx answer from /mcp. The phone sent it instead of a JSON-RPC reply, so nothing was dispatched."""
+
+    def __init__(self, status: int, body: str):
+        super().__init__(f"MCP HTTP error {status}")
+        self.status = status
+        self.body = body
+
+    @property
+    def session_unknown(self) -> bool:
+        """
+        The phone no longer knows our session. McpHandler.kt answers 404 {"error": "unknown session; initialize
+        again"} (or "missing Mcp-Session-Id") BEFORE it looks at the method, so re-initializing and resending is
+        safe. It forgets sessions on an app restart, after a day, and past 8 per peer.
+        """
+        if self.status != 404:
+            return False
+        try:
+            err = json.loads(self.body).get("error")
+        except Exception:
+            return False
+        return isinstance(err, str) and "session" in err.lower()
 
 
 class Runtime:
@@ -191,6 +221,7 @@ class Runtime:
         self.ssl = pinned_ssl_context(self.base, pin) if self.base.startswith("https://") else None
         self._conn = None
         self._conn_lock = threading.Lock()
+        self._init_lock = threading.Lock()
 
     def _connection(self):
         """One persistent connection: a fresh TLS handshake per call cost ~60-100 ms, all of it on the path
@@ -226,7 +257,7 @@ class Runtime:
                     r = conn.getresponse()
                     txt = r.read().decode()
                     if not 200 <= r.status < 300:
-                        raise RuntimeError(f"MCP HTTP error {r.status}")
+                        raise McpHttpError(r.status, txt)
                     return dict(r.getheaders()), (json.loads(txt) if txt else None)
                 except (http.client.HTTPException, OSError):
                     # The request DID leave. Re-sending would place a second call or play a clip twice, so this
@@ -257,14 +288,36 @@ class Runtime:
         self._post({"jsonrpc": "2.0", "method": "notifications/initialized"}, self.session)
         return self.session
 
+    def request(self, method: str, params: dict, rid: int = 2):
+        """
+        One session-bound JSON-RPC request; returns the response body. If the phone has forgotten the session,
+        initialize again and resend ONCE. Without this a long-running daemon (tools/inbound.py) failed every
+        call after the phone app restarted, while its event socket reconnected and it looked healthy.
+        """
+        with self._init_lock:
+            if not self.session:
+                self.init()
+            session = self.session
+        msg = {"jsonrpc": "2.0", "id": rid, "method": method, "params": params}
+        try:
+            return self._post(msg, session)[1]
+        except McpHttpError as e:
+            if not e.session_unknown:
+                raise
+        with self._init_lock:
+            # Another thread may have replaced the session while this one waited; use its new one.
+            if self.session == session:
+                self.session = None
+                self.init()
+            session = self.session
+        return self._post(msg, session)[1]
+
     def call(self, tool: str, args: dict, meta: Optional[dict] = None) -> dict:
         """meta: MCP _meta for the call, e.g. {"approvalWaitMs": 90000} to hold a policy approval open longer."""
-        if not self.session:
-            self.init()
         params: dict = {"name": tool, "arguments": args}
         if meta:
             params["_meta"] = meta
-        _, body = self._post({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": params}, self.session)
+        body = self.request("tools/call", params)
         if not isinstance(body, dict):
             return {"error": "MCP response missing; action outcome is unknown"}
         if body.get("jsonrpc") != "2.0" or body.get("id") != 2:
@@ -2100,8 +2153,14 @@ class EventChannel:
             if kind == "gap" and self.sub_id:
                 # The phone paused live push because we were slow; it resumes after a replay.
                 print(f"[{self.label}] event gap {f.get('from_id')}..{f.get('to_id')}: replaying", flush=True)
-                self.ws.send(json.dumps({"type": "replay", "subscription_id": self.sub_id,
-                                         "since_id": self.last_id, "limit": 1000}))
+                try:
+                    self.ws.send(json.dumps({"type": "replay", "subscription_id": self.sub_id,
+                                             "since_id": self.last_id, "limit": 1000}))
+                except Exception as e:
+                    # A closing socket raises websockets' ConnectionClosed, which is not a ConnectionError and
+                    # used to escape recv(): it hung up a live call and ended the inbound daemon. Reconnecting
+                    # replays from last_id, which covers the gap as well.
+                    self._reconnect(e)
                 continue
             if kind == "replay_result":
                 evs = f.get("events") or []
@@ -2423,10 +2482,10 @@ def _run(base: str, ws_url: str, token: str, respond: Responder,
             print(f"[summary] could not write the call log: {e}", flush=True)
         # The point of the call. A calling agent reads THIS; the transcript is the evidence behind it.
         if outcome_brain is not None:
-            o = summarize_outcome(outcome_brain, task, history, str(state.get("ended", "")))
+            o = summarize_outcome(outcome_brain, task, history, state.get("end_outcome", ""))
             if o is None and outcome_fallback is not None:
                 print(f"[outcome] re-asking {outcome_fallback}", flush=True)
-                o = summarize_outcome(outcome_fallback, task, history, str(state.get("ended", "")))
+                o = summarize_outcome(outcome_fallback, task, history, state.get("end_outcome", ""))
             if o:
                 print("[outcome] " + json.dumps(o, ensure_ascii=False), flush=True)
                 print(f"[outcome] {o['outcome']}: {o.get('summary', '')}", flush=True)
@@ -3012,7 +3071,8 @@ def _run(base: str, ws_url: str, token: str, respond: Responder,
             if ev_sid and ev_sid != state["session_id"]:
                 continue
             if topic == "call.ended":
-                state["ended"] = str(payload.get("outcome") or "")
+                # The outcome in its own key: "ended" is a flag, and the summary used to read "The call ended: True".
+                state["end_outcome"] = str(payload.get("outcome") or "")
                 print(f"[call ended: {payload.get('outcome')} after {payload.get('duration_ms')}ms]", flush=True)
                 state["ended"] = True
                 state.setdefault("ended_at", time.time())
@@ -3331,11 +3391,15 @@ def main() -> None:
     ap.add_argument("--brain", choices=sorted(BRAINS) + ["custom"], default="luna",
                     help="preset for model settings; 'custom' preserves --local-base/model/reasoning: "
                          + ", ".join(f"{k} = {v[1]}" for k, v in sorted(BRAINS.items())))
-    ap.add_argument("--local-base", default=LOCAL_ROUTER)
-    ap.add_argument("--local-model", default=LOCAL_DEFAULT_MODEL,
-                    help="model on --local-base. The router's resident 'fast' lane answers in ~0.5 s and is free, "
-                         "but needs SMALL_MODEL_RULES (applied automatically) to write numbers as words and to "
-                         "call hang_up on a goodbye. Ignored unless --brain custom")
+    # --local-base/--local-model/--llm-reasoning/--llm-api-key default to None so main() can tell a flag that
+    # was given from one that was not: with a preset they used to be silently replaced, and the key then went
+    # to the preset's host (a Cerebras key sent to api.openai.com). Now that is refused.
+    ap.add_argument("--local-base", default=None,
+                    help=f"OpenAI-compatible base URL (default {LOCAL_ROUTER}). Needs --brain custom")
+    ap.add_argument("--local-model", default=None,
+                    help=f"model on --local-base (default {LOCAL_DEFAULT_MODEL}). The router's resident 'fast' lane "
+                         "answers in ~0.5 s and is free, but needs SMALL_MODEL_RULES (applied automatically) to "
+                         "write numbers as words and to call hang_up on a goodbye. Needs --brain custom")
     ap.add_argument("--local-fallback", default="", help="model on --local-base to re-ask when --local-model "
                     "stalls ('' = none; prefer --fallback-brain, which may be on another host)")
     ap.add_argument("--fallback-brain", choices=sorted(BRAINS) + ["none"], default="ornith",
@@ -3345,13 +3409,14 @@ def main() -> None:
     ap.add_argument("--first-token-timeout", type=float, default=2.5)
     ap.add_argument("--llm-api-key", default=None,
                     help="Bearer key for --local-base when it is a hosted OpenAI-compatible API (env LLM_API_KEY). "
-                         "Needs --brain custom, otherwise the preset replaces --local-*. E.g. --local-base https://api.openai.com/v1 --local-model gpt-5.6-luna --llm-reasoning none, "
+                         "Needs --brain custom; a preset uses its own host's key from secrets/api_keys. E.g. --local-base https://api.openai.com/v1 --local-model gpt-5.6-luna --llm-reasoning none, "
                          "https://api.anthropic.com/v1 --local-model claude-sonnet-5 --llm-reasoning off, or "
                          "https://api.cerebras.ai/v1 --local-model qwen-3.8-27b; see docs/conversation-mode.md. "
                          "Default: env LLM_API_KEY, else the matching line in secrets/api_keys")
-    ap.add_argument("--llm-reasoning", default="none",
-                    help="reasoning_effort sent for non-'voice' models: 'none' for the router, 'low'/'minimal' for "
-                         "hosted models that reject 'none', 'off' to omit the field")
+    ap.add_argument("--llm-reasoning", default=None,
+                    help="reasoning_effort sent for non-'voice' models: 'none' (the default) for the router, "
+                         "'low'/'minimal' for hosted models that reject 'none', 'off' to omit the field. "
+                         "Needs --brain custom")
     brief = ap.add_mutually_exclusive_group()
     brief.add_argument("--system", default="You are a helpful assistant making a phone call on the user's behalf.",
                        help="the brief: what this call is for")
@@ -3418,6 +3483,17 @@ def main() -> None:
     ap.add_argument("--list-voices", action="store_true", help="print kokoro voices and exit")
     ap.add_argument("-v", "--verbose", action="store_true", help="show interim transcripts")
     a = ap.parse_args()
+    if a.responder == "local" and a.brain != "custom":
+        given = [flag for flag, v in (("--local-base", a.local_base), ("--local-model", a.local_model),
+                                      ("--llm-reasoning", a.llm_reasoning), ("--llm-api-key", a.llm_api_key))
+                 if v is not None]
+        if given:
+            raise SystemExit(f"{', '.join(given)} {'needs' if len(given) == 1 else 'need'} --brain custom: the "
+                             f"'{a.brain}' preset sets its own endpoint, model and reasoning, and uses its own "
+                             f"host's key from secrets/api_keys")
+    a.local_base = a.local_base if a.local_base is not None else LOCAL_ROUTER
+    a.local_model = a.local_model if a.local_model is not None else LOCAL_DEFAULT_MODEL
+    a.llm_reasoning = a.llm_reasoning if a.llm_reasoning is not None else "none"
     if a.system_file:
         try:
             with open(a.system_file, encoding="utf-8") as f:
@@ -3460,16 +3536,25 @@ def main() -> None:
     if a.responder == "scripted":
         respond = scripted_responder()
     elif a.responder == "local":
+        primary_key = None
         if a.brain != "custom":
             a.local_base, a.local_model, a.llm_reasoning = BRAINS[a.brain]
+            if os.environ.get("LLM_API_KEY"):
+                print(f"[converse] LLM_API_KEY is ignored with --brain {a.brain}; it applies to --brain custom only",
+                      flush=True)
+        else:
+            primary_key = a.llm_api_key or (os.environ.get("LLM_API_KEY") if a.local_base.startswith("https://")
+                                            else None)
 
         def make_brain(base: str, model: str, reasoning: str, key: Optional[str] = None) -> Brain:
+            # Only the custom primary (and its --local-fallback, same host) is given a key by the caller. Every
+            # other brain gets the key secrets/api_keys holds for ITS host, so no key reaches another provider.
             if base.startswith("https://") and not key:
-                key = os.environ.get("LLM_API_KEY") or api_key_for(base)
+                key = api_key_for(base)
             return Brain(base, model, None if reasoning == "off" else reasoning, rules_for(model), key,
                          trust_tools=not is_small_model(model))
 
-        primary = make_brain(a.local_base, a.local_model, a.llm_reasoning, a.llm_api_key)
+        primary = make_brain(a.local_base, a.local_model, a.llm_reasoning, primary_key)
         # The fallback is whatever answers when the primary gives no token in time. It does NOT have to live
         # on the same host: a hosted brain having a slow minute is best covered by the LAN router, which
         # answers in about half a second — far better than the canned "could you say that again".
@@ -3479,7 +3564,7 @@ def main() -> None:
             if (fb_model, fb_base) != (primary.model, primary.base):
                 fb = make_brain(fb_base, fb_model, fb_reasoning)
         elif a.local_fallback and a.local_fallback != a.local_model:
-            fb = make_brain(a.local_base, a.local_fallback, a.llm_reasoning, a.llm_api_key)
+            fb = make_brain(a.local_base, a.local_fallback, a.llm_reasoning, primary_key)
         respond = local_responder(a.system + call_context() + phone_rules, state=state,
                                   first_token_timeout=a.first_token_timeout,
                                   brain=primary, fallback_brain=fb)

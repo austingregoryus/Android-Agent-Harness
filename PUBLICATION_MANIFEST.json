@@ -473,7 +473,7 @@
   },
   {
     "path": "docs/conversation-mode.md",
-    "sha256": "6c8d0b020ce7d6430d81b6d475b8f4b895a9a728141010b0a0dd871a4fc69e67"
+    "sha256": "0f8feacc86eedee7fa69844fc81bb8c2e37f835849103ef9577a22f7818cd359"
   },
   {
     "path": "docs/development.md",
@@ -485,7 +485,7 @@
   },
   {
     "path": "docs/inbound.md",
-    "sha256": "034545f6d36d2a25e6bfed74cb23784d958537d3ce376a9b633994b7db478ed4"
+    "sha256": "492206978608edea9be90121c0c49aa882a3cbc13c264bd7edb477a02bb13908"
   },
   {
     "path": "docs/protocol.md",
@@ -821,11 +821,11 @@
   },
   {
     "path": "tools/converse.py",
-    "sha256": "0f05326885806841bf3cc633b9ea53166e64be2454f191128e93210e188751a9"
+    "sha256": "cb5b504eeaf56adfd212dcdfd091c8a8171620251eb812563621372fd3e66d9b"
   },
   {
     "path": "tools/dry_call.py",
-    "sha256": "e65f6395d71245418386a3ca35dcdf5faebe7d74285114693c746ab786641293"
+    "sha256": "8d96203614279f4c42f2b6f5b463dfb87818198fcea69d74ec8e538cd84e4a0f"
   },
   {
     "path": "tools/generate_turn_fixture.py",
@@ -833,7 +833,7 @@
   },
   {
     "path": "tools/inbound.py",
-    "sha256": "7cf92fc2dfa281824913387f2b9a0d0ac714b25468d013c66e6ea884ab80ffd5"
+    "sha256": "ecbe8bf06b19c6825bc96964d4d38117b9dcab253a5de0dd77de7bcab5983934"
   },
   {
     "path": "tools/judgement_eval.py",
@@ -865,11 +865,11 @@
   },
   {
     "path": "tools/test_converse_sim.py",
-    "sha256": "ea654dae680299cf574a4022c23bf6543416f5fc392064444555d6b05137a0a3"
+    "sha256": "4e2a02c88de6718ba197fb77240ec4ca8424d9a7ac1c5e39cbeb4b36b705c151"
   },
   {
     "path": "tools/test_inbound.py",
-    "sha256": "3f9f72d46fd3f804c34628721cef1f24f28cacbc7138fd979fc54df5713a8d78"
+    "sha256": "ce048d9d904dda884b3c6345a8d580512c49efebb6cda8ef8e9d17183e520e0d"
   },
   {
     "path": "tools/test_publication.py",
@@ -877,7 +877,7 @@
   },
   {
     "path": "tools/test_python_safety.py",
-    "sha256": "ee2df6080db75c60e429dab72bc375ddf688986f06c70d1bdf2f03aeb50a9a14"
+    "sha256": "9686532fea5dcba6cab51b9e25742fc8d6758d444078660a1f94e0050be5c2b1"
   },
   {
     "path": "tools/turn-fixture-requirements.txt",
@@ -885,6 +885,6 @@
   },
   {
     "path": "tools/verify_device.py",
-    "sha256": "9da4edf6e4720c29ccefbde939c72d34138981d48c07e10a9392d0dc00c4f05e"
+    "sha256": "d60767f985b363fa452c95826d683851e85b2955161bd72f5d0c96fd40760426"
   }
 ]
