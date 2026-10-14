@@ -1,0 +1,490 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/events-ws-frames.json",
+  "title": "EventsWsFrame",
+  "description": "Every JSON text frame exchanged on GET /ws/events (docs/protocol.md section 4.3), both client to runtime (subscribe, unsubscribe, ack, replay, list, ping) and runtime to client (subscribed, unsubscribed, event, replay_result, subscriptions, gap, error, pong, bye). Discriminated by `type`. Each branch is self-contained and closed with additionalProperties: false.",
+  "oneOf": [
+    {
+      "title": "subscribe (client to runtime)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "topic_glob"
+      ],
+      "properties": {
+        "type": {
+          "const": "subscribe"
+        },
+        "topic_glob": {
+          "type": "string"
+        },
+        "filter": {
+          "type": "array",
+          "items": {
+            "$ref": "subscription.json#/$defs/filterClause"
+          }
+        },
+        "delivery": {
+          "type": "string",
+          "enum": [
+            "live",
+            "queue"
+          ]
+        },
+        "ttl_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "subscribed (runtime to client, reply to subscribe)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "subscription_id",
+        "created_at_event_id"
+      ],
+      "properties": {
+        "type": {
+          "const": "subscribed"
+        },
+        "subscription_id": {
+          "type": "string",
+          "pattern": "^sub_[0-9a-f]{12}$"
+        },
+        "created_at_event_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        },
+        "expires_at": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Epoch ms when the subscription expires, or null."
+        }
+      }
+    },
+    {
+      "title": "unsubscribe (client to runtime)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "subscription_id"
+      ],
+      "properties": {
+        "type": {
+          "const": "unsubscribe"
+        },
+        "subscription_id": {
+          "type": "string",
+          "pattern": "^sub_[0-9a-f]{12}$"
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "unsubscribed (runtime to client, reply to unsubscribe)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "unsubscribed"
+        },
+        "subscription_id": {
+          "type": "string",
+          "pattern": "^sub_[0-9a-f]{12}$",
+          "description": "protocol.md lists no explicit reply fields for unsubscribed; included here for correlation, echoing the request."
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "ack (client to runtime, no reply)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "subscription_id",
+        "through_id"
+      ],
+      "properties": {
+        "type": {
+          "const": "ack"
+        },
+        "subscription_id": {
+          "type": "string",
+          "pattern": "^sub_[0-9a-f]{12}$"
+        },
+        "through_id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cumulative: acknowledges every id up to and including this one."
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "replay (client to runtime)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "subscription_id",
+        "since_id"
+      ],
+      "properties": {
+        "type": {
+          "const": "replay"
+        },
+        "subscription_id": {
+          "type": "string",
+          "pattern": "^sub_[0-9a-f]{12}$"
+        },
+        "since_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 200
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "replay_result (runtime to client, reply to replay)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "subscription_id",
+        "events",
+        "next_since_id",
+        "truncated",
+        "earliest_available_id"
+      ],
+      "properties": {
+        "type": {
+          "const": "replay_result"
+        },
+        "subscription_id": {
+          "type": "string",
+          "pattern": "^sub_[0-9a-f]{12}$"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "event.json"
+          }
+        },
+        "next_since_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the journal's oldest retained id is greater than since_id + 1 (events were evicted by retention)."
+        },
+        "earliest_available_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "list (client to runtime)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "list"
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "subscriptions (runtime to client, reply to list)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "subscriptions"
+      ],
+      "properties": {
+        "type": {
+          "const": "subscriptions"
+        },
+        "subscriptions": {
+          "type": "array",
+          "items": {
+            "$ref": "subscription.json"
+          }
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "ping (client to runtime)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "ping"
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "pong (runtime to client, reply to ping)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "pong"
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "event (runtime to client, live push)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "subscription_id",
+        "event"
+      ],
+      "properties": {
+        "type": {
+          "const": "event"
+        },
+        "subscription_id": {
+          "type": "string",
+          "pattern": "^sub_[0-9a-f]{12}$"
+        },
+        "event": {
+          "type": "object",
+          "description": "protocol.md section 4.3 documents this inner object with only id, topic, ts, correlation_id, payload (no device_id, unlike the full Event envelope in event.json).",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "topic",
+            "ts",
+            "correlation_id",
+            "payload"
+          ],
+          "properties": {
+            "id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "topic": {
+              "$ref": "event.json#/$defs/topic"
+            },
+            "ts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "correlation_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^corr_"
+            },
+            "payload": true
+          }
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "gap (runtime to client, backpressure)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "subscription_id",
+        "from_id",
+        "to_id"
+      ],
+      "properties": {
+        "type": {
+          "const": "gap"
+        },
+        "subscription_id": {
+          "type": "string",
+          "pattern": "^sub_[0-9a-f]{12}$"
+        },
+        "from_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "to_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "error (runtime to client)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "type": {
+          "const": "error"
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Optional reference, e.g. the subscription_id or frame that caused the error."
+        }
+      }
+    },
+    {
+      "title": "bye (runtime to client, then close)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "const": "bye"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "revoked",
+            "shutdown",
+            "emergency_stop"
+          ]
+        },
+        "ref": {
+          "description": "Optional client-chosen request reference; echoed verbatim on the reply."
+        }
+      }
+    },
+    {
+      "title": "hello (runtime to client, first frame after connect)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "peer_id",
+        "last_event_id",
+        "subscriptions"
+      ],
+      "properties": {
+        "type": {
+          "const": "hello"
+        },
+        "peer_id": {
+          "type": "string"
+        },
+        "last_event_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "subscriptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^sub_[0-9a-f]{12}$"
+          },
+          "description": "Ids of the peer's persisted subscriptions attached to this socket."
+        }
+      }
+    }
+  ],
+  "examples": [
+    {
+      "type": "subscribe",
+      "topic_glob": "messaging.*",
+      "delivery": "live"
+    },
+    {
+      "type": "subscribed",
+      "subscription_id": "sub_0123456789ab",
+      "created_at_event_id": 4700
+    },
+    {
+      "type": "ack",
+      "subscription_id": "sub_0123456789ab",
+      "through_id": 4711
+    },
+    {
+      "type": "gap",
+      "subscription_id": "sub_0123456789ab",
+      "from_id": 4712,
+      "to_id": 4800
+    },
+    {
+      "type": "bye",
+      "reason": "emergency_stop"
+    }
+  ]
+}

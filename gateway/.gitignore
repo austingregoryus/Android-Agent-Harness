@@ -1,0 +1,12 @@
+# Local gateway state and secrets — never commit these.
+gateway.db
+gateway.db-journal
+gateway.db-wal
+gateway.db-shm
+secrets/
+config.yaml
+/gateway
+/gateway.exe
+*.exe
+*.exe~
+*~

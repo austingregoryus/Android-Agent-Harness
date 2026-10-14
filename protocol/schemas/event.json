@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/event.json",
+  "title": "Event",
+  "description": "An immutable fact appended to the per-device event journal (docs/protocol.md section 4). `id` is a global, monotonically increasing integer (events.id INTEGER PRIMARY KEY AUTOINCREMENT); there is exactly one journal per device and subscriptions are views over it. `payload` is discriminated by `topic`: see the `oneOf` branches, one per section 4.1 topic.",
+  "type": "object",
+  "required": ["id", "topic", "ts", "device_id", "correlation_id", "payload"],
+  "properties": {
+    "id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Global monotonically increasing journal id."
+    },
+    "topic": {
+      "$ref": "#/$defs/topic"
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch milliseconds."
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^dev_",
+      "description": "Owning device id."
+    },
+    "correlation_id": {
+      "type": ["string", "null"],
+      "pattern": "^corr_",
+      "description": "Correlation id of the causally related tools/call, or null for a runtime-originated event."
+    },
+    "payload": true
+  },
+  "unevaluatedProperties": false,
+  "oneOf": [
+    {
+      "properties": {
+        "topic": { "const": "messaging.sms_received" },
+        "payload": { "$ref": "#/$defs/payloads/messaging.sms_received" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "call.state_changed" },
+        "payload": { "$ref": "#/$defs/payloads/call.state_changed" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "call.ringing" },
+        "payload": { "$ref": "#/$defs/payloads/call.lifecycle" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "call.connected" },
+        "payload": { "$ref": "#/$defs/payloads/call.lifecycle" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "call.ended" },
+        "payload": { "$ref": "#/$defs/payloads/call.lifecycle" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "notification.posted" },
+        "payload": { "$ref": "#/$defs/payloads/notification.lifecycle" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "notification.removed" },
+        "payload": { "$ref": "#/$defs/payloads/notification.lifecycle" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "battery.changed" },
+        "payload": { "$ref": "#/$defs/payloads/battery.changed" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "connectivity.changed" },
+        "payload": { "$ref": "#/$defs/payloads/connectivity.changed" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "session.state" },
+        "payload": { "$ref": "#/$defs/payloads/session.state" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "policy.approval_required" },
+        "payload": { "$ref": "#/$defs/payloads/policy.approval_required" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "policy.approval_resolved" },
+        "payload": { "$ref": "#/$defs/payloads/policy.approval_resolved" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "runtime.started" },
+        "payload": { "$ref": "#/$defs/payloads/runtime.lifecycle" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "runtime.stopping" },
+        "payload": { "$ref": "#/$defs/payloads/runtime.lifecycle" }
+      },
+      "required": ["topic", "payload"]
+    }
+  ],
+  "$defs": {
+    "topic": {
+      "type": "string",
+      "enum": [
+        "messaging.sms_received",
+        "call.state_changed",
+        "call.ringing",
+        "call.connected",
+        "call.ended",
+        "notification.posted",
+        "notification.removed",
+        "battery.changed",
+        "connectivity.changed",
+        "session.state",
+        "policy.approval_required",
+        "policy.approval_resolved",
+        "runtime.started",
+        "runtime.stopping"
+      ]
+    },
+    "actionClass": {
+      "type": "string",
+      "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"]
+    },
+    "payloads": {
+      "messaging.sms_received": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["message_id", "thread_id", "from", "text", "ts", "sim_slot"],
+        "properties": {
+          "message_id": { "type": "string" },
+          "thread_id": { "type": "string" },
+          "from": { "type": "string", "description": "Sender, typically E.164." },
+          "text": { "type": "string" },
+          "ts": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds." },
+          "sim_slot": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "call.state_changed": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state", "number"],
+        "properties": {
+          "state": { "type": "string", "enum": ["IDLE", "RINGING", "OFFHOOK"] },
+          "number": { "type": "string" },
+          "session_id": { "type": "string", "description": "Present once a session exists for this call." }
+        }
+      },
+      "call.lifecycle": {
+        "description": "Shared shape for call.ringing, call.connected, call.ended.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["number", "direction"],
+        "properties": {
+          "number": { "type": "string" },
+          "session_id": { "type": "string" },
+          "direction": { "type": "string", "enum": ["in", "out"] },
+          "duration_ms": { "type": "integer", "minimum": 0, "description": "Present on call.ended." }
+        }
+      },
+      "notification.lifecycle": {
+        "description": "Shared shape for notification.posted and notification.removed.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "package", "title", "text", "ts", "category", "can_reply"],
+        "properties": {
+          "key": { "type": "string" },
+          "package": { "type": "string" },
+          "title": { "type": "string" },
+          "text": { "type": "string" },
+          "ts": { "type": "integer", "minimum": 0 },
+          "category": { "type": "string" },
+          "can_reply": { "type": "boolean" }
+        }
+      },
+      "battery.changed": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["percent", "charging", "status"],
+        "properties": {
+          "percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "charging": { "type": "boolean" },
+          "status": { "type": "string", "description": "Android BatteryManager status string; protocol.md v0 does not close this set." }
+        }
+      },
+      "connectivity.changed": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["internet_available", "transport"],
+        "properties": {
+          "internet_available": { "type": "boolean" },
+          "transport": { "type": "string", "enum": ["wifi", "cellular", "none"] },
+          "cellular_type": { "type": "string", "description": "e.g. 4G, 5G; present only when transport is cellular." }
+        }
+      },
+      "session.state": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["session_id", "kind", "state", "previous_state"],
+        "properties": {
+          "session_id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["call"], "description": "Only call exists in v0 (section 5)." },
+          "state": { "$ref": "session-frames.json#/$defs/sessionState" },
+          "previous_state": { "$ref": "session-frames.json#/$defs/sessionState" }
+        }
+      },
+      "policy.approval_required": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pending_action_id", "capability", "action_class", "expires_at"],
+        "properties": {
+          "pending_action_id": { "type": "string", "pattern": "^pa_" },
+          "capability": { "type": "string" },
+          "action_class": { "$ref": "#/$defs/actionClass" },
+          "expires_at": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "policy.approval_resolved": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pending_action_id", "decision"],
+        "properties": {
+          "pending_action_id": { "type": "string", "pattern": "^pa_" },
+          "decision": {
+            "type": "string",
+            "enum": ["approved", "denied"],
+            "description": "protocol.md section 6 does not spell out the literal token set; approved and denied are the two documented outcomes of resolving a pending action."
+          }
+        }
+      },
+      "runtime.lifecycle": {
+        "description": "Shared shape for runtime.started and runtime.stopping.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version"],
+        "properties": {
+          "version": { "type": "string" },
+          "reason": { "type": "string", "description": "Present on runtime.stopping." }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "id": 4711,
+      "topic": "messaging.sms_received",
+      "ts": 1757139000123,
+      "device_id": "dev_a1b2c3d4e5f6",
+      "correlation_id": null,
+      "payload": { "message_id": "msg_1", "thread_id": "thr_1", "from": "+15550001234", "text": "hi", "sim_slot": 0, "ts": 1757139000123 }
+    },
+    {
+      "id": 4712,
+      "topic": "policy.approval_required",
+      "ts": 1757139001000,
+      "device_id": "dev_a1b2c3d4e5f6",
+      "correlation_id": "corr_0000000000000001",
+      "payload": { "pending_action_id": "pa_000000000001", "capability": "messaging.send_sms", "action_class": "COMMUNICATION", "expires_at": 1757140000000 }
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/audit-entry.json",
+  "title": "AuditEntry",
+  "description": "A row of the append-only audit_entries table (docs/protocol.md section 7), enforced by SQLite triggers (BEFORE UPDATE / BEFORE DELETE ... RAISE(ABORT)) and a hash chain: entry_hash = sha256(prev_hash || canonical_json(all fields except entry_hash)). The chain seed is a random 32-byte value generated on first run and kept in Keystore-backed storage. phone://audit/recent returns the last 100 rows. Redaction: values for keys named text, body, or message are kept; keys matching token|secret|password|key are replaced with the string \"[redacted]\". Not every field is populated for every kind (e.g. duration_ms and result_json are meaningless before a tool.outcome row exists) so those columns are nullable rather than omitted, matching a real SQL row where the column always exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "ts", "correlation_id", "peer_id", "kind", "capability", "action_class",
+    "args_json", "result_json", "success", "error_code", "duration_ms",
+    "idempotency_key", "prev_hash", "entry_hash"
+  ],
+  "properties": {
+    "id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "INTEGER PRIMARY KEY AUTOINCREMENT."
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch milliseconds."
+    },
+    "correlation_id": {
+      "type": ["string", "null"],
+      "pattern": "^corr_"
+    },
+    "peer_id": {
+      "type": ["string", "null"],
+      "pattern": "^peer_[0-9a-f]{12}$",
+      "description": "Null only for runtime-internal admin rows with no acting peer."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "tool.intent",
+        "tool.outcome",
+        "policy.decision",
+        "approval",
+        "event.emitted",
+        "session.transition",
+        "admin"
+      ]
+    },
+    "capability": {
+      "type": ["string", "null"],
+      "description": "The dotted tool/capability name; null for kinds not tied to one capability (e.g. some admin rows)."
+    },
+    "action_class": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "string", "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"] }
+      ]
+    },
+    "args_json": {
+      "type": ["object", "null"],
+      "description": "Redacted call arguments. text/body/message keys are kept; token|secret|password|key-matching keys become \"[redacted]\".",
+      "additionalProperties": true
+    },
+    "result_json": {
+      "type": ["object", "string", "null"],
+      "description": "Truncated to 8 KB; null until an outcome is known."
+    },
+    "success": {
+      "type": ["boolean", "null"]
+    },
+    "error_code": {
+      "type": ["string", "null"],
+      "description": "e.g. one of the structuredContent.error codes from section 3.2, when success is false."
+    },
+    "duration_ms": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "idempotency_key": {
+      "type": ["string", "null"],
+      "description": "params._meta.idempotencyKey when the gateway supplied one."
+    },
+    "prev_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Hex sha256 of the previous row (or the Keystore-held chain seed for the first row)."
+    },
+    "entry_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "sha256(prev_hash || canonical_json(all fields except entry_hash))."
+    }
+  },
+  "examples": [
+    {
+      "id": 1234,
+      "ts": 1757139000000,
+      "correlation_id": "corr_0000000000000001",
+      "peer_id": "peer_0123456789ab",
+      "kind": "tool.outcome",
+      "capability": "messaging.send_sms",
+      "action_class": "COMMUNICATION",
+      "args_json": { "to": "+15550001234", "text": "hi" },
+      "result_json": { "message_id": "msg_1" },
+      "success": true,
+      "error_code": null,
+      "duration_ms": 42,
+      "idempotency_key": "3f9a...",
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "entry_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  ]
+}

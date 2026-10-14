@@ -1,0 +1,890 @@
+[
+  {
+    "path": ".gitattributes",
+    "sha256": "a3ddc16e41fddf49c1240af2f40aea4d09b2710508ba702d839efc102955b528"
+  },
+  {
+    "path": ".github/workflows/ci.yml",
+    "sha256": "306e5e098e364cc47a953a33648fb448576c29e485f60c3be39a578b9a328976"
+  },
+  {
+    "path": ".gitignore",
+    "sha256": "9c65d797322e2a7fdf908270fa303f1da640bfb4e04de50b43de8e301ccf9c31"
+  },
+  {
+    "path": "CONTRIBUTING.md",
+    "sha256": "1ed9c798d38913ffd6494a6c80a603ee35d9c74c308a99aef96e54acae727cc0"
+  },
+  {
+    "path": "LICENSE",
+    "sha256": "118d5325ad42e2d55aaa1b0e9db8f97e86d329ae1395c84bcefcc52e5d6b69fd"
+  },
+  {
+    "path": "README.md",
+    "sha256": "5dd348ccc70cdd1fdc35801c94d3d65ebe2a83b60b5a322f94a2f59ce7129612"
+  },
+  {
+    "path": "SECURITY.md",
+    "sha256": "6c05577e4728dd88fdac6d2d557b6154a857ab1aab557f5d3e5a53c78db12f1d"
+  },
+  {
+    "path": "STATUS.md",
+    "sha256": "8a6037d699ba308376ab65631f5fc94bd29dfe0be2604b4824514ef5c75eb02b"
+  },
+  {
+    "path": "THIRD_PARTY_NOTICES.md",
+    "sha256": "86db254f84f80c9cfc1e27ee0063ac8dec8c4279a3ccc66459e31b9d356580c2"
+  },
+  {
+    "path": "android-runtime/app/build.gradle.kts",
+    "sha256": "b14f9e5a978c45fb4abdf7bea2e0fc27bbdd03c24548cb1470e267c2832d7c8a"
+  },
+  {
+    "path": "android-runtime/app/proguard-rules.pro",
+    "sha256": "7ce30748fa8f2a933ff7713bee28a11f00f6497c24960acdbd988c5b578bcff5"
+  },
+  {
+    "path": "android-runtime/app/src/debug/AndroidManifest.xml",
+    "sha256": "a661a70394cd1eea73f06de43a01cb31c1783cb9df7e522143002c107e0997d1"
+  },
+  {
+    "path": "android-runtime/app/src/main/AndroidManifest.xml",
+    "sha256": "9bc3851c056776d841aeb847a9b0bac2b1b4851466918f8d4550253df3692842"
+  },
+  {
+    "path": "android-runtime/app/src/main/assets/smart-turn-v3.2-cpu.onnx",
+    "sha256": "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f"
+  },
+  {
+    "path": "android-runtime/app/src/main/assets/smartturn_golden.json",
+    "sha256": "32642a6cb8ceca24f5d2e23bbc5a8e7c609eb89be48d7876063589bc5c5ade30"
+  },
+  {
+    "path": "android-runtime/app/src/main/assets/smartturn_golden.pcm",
+    "sha256": "41eabe0e087702cf073afe4e5524ccdfa8ef43bdcee792a6a4d71b9cfd74f93c"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/RuntimeApp.kt",
+    "sha256": "ea9ae4a0f95f687b84c66349cb540a763fe5f730373e86e2069fcfde086622b6"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/audit/AuditStore.kt",
+    "sha256": "1a0439cc95b028d23eec1dc45a3b3c461e639649fce643c99591be92107cbb55"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/AutomationCapability.kt",
+    "sha256": "b88240edbcbc1e13d54a7a0de67f09092baf2451ae80e2759ce911af494b5215"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/AutomationExecutor.kt",
+    "sha256": "910969864fbe2128b42121d289644b98e9f354d50273d176d0dcc219eda8fa8e"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/Matcher.kt",
+    "sha256": "9230452d688a9a1a1a0bba9f8d874da573c78f6d76a3d657970d4c36a73b2d1f"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/ScheduleReceiver.kt",
+    "sha256": "5e60b7f7a8a3bb0f00e595f12fad7086b5e05b8ac04ee7dff4860f19d5e8d848"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/Steps.kt",
+    "sha256": "cb7cfc9daae529b1eee487b97d40a7e8b77a53f886691f313d0310dc0b7aff5d"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/Templates.kt",
+    "sha256": "e886664b793586725b7b9271164582a8a35e4cb659854f34b46848da14a2a12a"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/Triggers.kt",
+    "sha256": "2f00901571d60c35eecc967a8bfbf6f82d30bcdaefa65ac3eb91387fd1138f38"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/WorkflowCapabilities.kt",
+    "sha256": "14f923caca9650750b0d1014af9790e0f383bf8672f79e8edbcd4bf31d15694a"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/WorkflowEngine.kt",
+    "sha256": "f2a9b09e5666c189869c08eef8c6e7a9f8812d9f7a8e0f5e307313df7c0d8b24"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/WorkflowStore.kt",
+    "sha256": "2e7d786d9ad8eb7598df55163f6961ae5ee7dafd43818bbd65fa48c18ddcefb2"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/AiAsk.kt",
+    "sha256": "2d813360219612551c508fbb90b0acfeaadcdd40cc116fd21971c294e07bd4f7"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/AsrSelfTest.kt",
+    "sha256": "75d068d603fa3aab2087cbcf0e8302a8e0fb96aab12a375389498f8d62e237aa"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/AudioProbe.kt",
+    "sha256": "1f00a04991013133115834e49ec8122d61d35cf22d7d88f1ed0ab51bf86d8996"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/CallAudioPlay.kt",
+    "sha256": "b137b0322e50e831b52a84734b35ac7de1a51bd1da0e17a835014d8488d131cd"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/CallSpeech.kt",
+    "sha256": "b87b6bc06a40a727300065d790a4373e17b04b410136d3ff5eead9f6c7528bb5"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/CallTurnAudio.kt",
+    "sha256": "f354604fccac6e6f429f74456e02b7a3b2d5f90f8660af49ae0be1efe41d2806"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/Capability.kt",
+    "sha256": "b61358271edde4b5f2b0fd1bf0ea767e4a78a527ff19051016686ef9876734f3"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/CapabilityRegistry.kt",
+    "sha256": "0ea798a2fecba7fcd66aadc46dc082673fc57ed048a0c1dd94875243e6941585"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/Clipboard.kt",
+    "sha256": "bab258f01820df0ab67896aaf0b371a762fc40759cb6ff86f5e50394807df462"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/DeviceExtras.kt",
+    "sha256": "bf8b84e1e68aeb9d57979f747a16610cc585c9d036ec074695cf8ef82a3fae1b"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/Diagnostics.kt",
+    "sha256": "4f6e95c95185358ec3502ae6d0f7693349b2bf380544cf8ba57dcf3bd584363f"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/DroidMcpAdapter.kt",
+    "sha256": "1a4d0679c63e3fea1bf91dcdb384afc27f9948c0dd28dee6deb6d6c7090149de"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/NativeCapabilities.kt",
+    "sha256": "5ef67d886f37f22e4353051fdd995d2fa9c0240c95397d1b859b194acbf542be"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/Notify.kt",
+    "sha256": "e62782d9b221315c1e096fbf2f2784db30c467a231c58fb61aeea9f2a59039e2"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/SessionAccess.kt",
+    "sha256": "bdace4cbe2ac2b9998190d597f325604d0f5e73c439a648cb110e83c59870007"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/TurnSelfTest.kt",
+    "sha256": "287a9cda7d84af3f7370035cb3d94097b3ed943f95947acebb1348745164d590"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/UiGestures.kt",
+    "sha256": "0f275aebf6df3add4e45b83bba61ca04a76267a742ce352948716a0b1625cb01"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/core/BootReceiver.kt",
+    "sha256": "14e20a3184c14e8282d7f4c17f62cc4eaaf946821aebaa58d7915473860f0b90"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/core/DebugReceiver.kt",
+    "sha256": "91a7dd3e2a15d15da316aa73bd4d805d1286478847c776878895cabac04718e1"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/core/Ids.kt",
+    "sha256": "5024290a8e198a7b4976b2a6ae0260ce448562721488f68fe361da86c4205cb5"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/core/Json.kt",
+    "sha256": "96c03af8e69a6ef7e7a03ab288f34c348332fb80c4aaf475a2766076d2e88d18"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/core/Runtime.kt",
+    "sha256": "13118f5c5270ab97014f5df4daa90aad88f01aad8a32b647b28647bb32bcbf33"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/core/RuntimeService.kt",
+    "sha256": "20bf5e2796a7f6505a0bde3ed8c06c9c0f878fe3e32711a5b3de14bbae87d4c2"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/core/ToolDispatch.kt",
+    "sha256": "73bfc5f2eef302f2790126ef89ff8f87cddfe1be4f3b47932b52f2d8ac841353"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/events/Event.kt",
+    "sha256": "67bd81cde78fa44582663120b5d628d8042bc28351c15f60f7b737eb8be8a70e"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/events/EventBroker.kt",
+    "sha256": "028eda14095a87f4b02f5d1fd3df82c18ca9f3ad50468cb10f6fef2e89d37356"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/events/SubscriptionStore.kt",
+    "sha256": "2ff0be0195ffc5ecc18aef2a9ac66ff96b2485c1d56d4b62eb04ab1f29efa187"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/events/sources/CallStateSource.kt",
+    "sha256": "6afc3f8c4487efbc6d7bd806f2950c3c254f2e0fb7110c09a1b40870b2c38333"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/events/sources/NotificationEventListener.kt",
+    "sha256": "425a7a0e7851f1d3d7096048757429eb9ffbf22d9b6646c5c4759276fff2718a"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/events/sources/SmsReceiver.kt",
+    "sha256": "89fbd3baaba66c6bec958099c6975ed942760218da91f36773948a42cfaee893"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/events/sources/SystemStateSource.kt",
+    "sha256": "5ea9d81e46c5ed174fd32bbac0c715cebaa8e91f673db307afeff3c197482acf"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/policy/ApprovalManager.kt",
+    "sha256": "6c4fac12646ba40fa1dfe2d6619bb062a85ed7358caf9a686f6c253a8373da8b"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/policy/ApprovalReceiver.kt",
+    "sha256": "5326ab75c3ca22e0e0ad9aa480ef3bc9764b9e48a04e1b5357c0aa85580cdfda"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/policy/PolicyEngine.kt",
+    "sha256": "7c1e3758f3e42d46803af543a24dc7e36137a49f744e839272ed509fb09d34af"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/policy/PolicyModel.kt",
+    "sha256": "0800f235c1af6210b373873c887cb62d10928f622895e9d154476d1f1a5b5c39"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/policy/RateLimiter.kt",
+    "sha256": "af22c8b21d350f095d9b7cdf3fa579e7ee5fe8f2b94a800c6f122664f6642b8a"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/sessions/CallSession.kt",
+    "sha256": "0f5adde4d47f9e887680d97dd52cb3f7b2ba40943f12747616f7116c6c636a9d"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/sessions/SessionManager.kt",
+    "sha256": "701ab091228f9f03c0fba11a22fda29b070cbef2cff6be8c7f41ebb2f45e28ba"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/storage/Db.kt",
+    "sha256": "90599a3dbf3896cc3bf652a8f5c215d1e2b4541b8f994db3e2501961a9a0e852"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/storage/SecureStore.kt",
+    "sha256": "26f92b40cc46730f0d5cb1c5cd7b81d6d167129f6a6bd7a3ca6e24506f464d27"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/CallConversation.kt",
+    "sha256": "c06f56cdf24d5ff35b5317e2c4919f30ae35794e224bb28a30f84d64c05662b3"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/Conversations.kt",
+    "sha256": "23ae71b712d9c194f268cab16f503239db3ae959ac0b4bd60937f8d92ae75077"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/DriverLease.kt",
+    "sha256": "c20eb167afc16e225209009724b108661fc5eefd9714bdd8415be5ac138fd6c6"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/StreamingAsr.kt",
+    "sha256": "34e0969d487553bdb4a138c41f53ddaa0fe3cd03de21f333558546a96485aa3e"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/SymbiosisInCallService.kt",
+    "sha256": "dcf66e4033c4e53494ba4ef9b032f708a464e0931f68ea5a7af9ac0dc06b8651"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/TelephonyAudio.kt",
+    "sha256": "fd57698717584a1de8d244a8b0782ae11d778be8f81fd8115f2957dffd81f939"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/Tts.kt",
+    "sha256": "0f0a2d51390fe4bb8ede7c8f27f1b6ef6a82831745a132da52b12f90e5629448"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/TurnDetector.kt",
+    "sha256": "1f7aecea2abb8a9b6713c5d29d7358edc87dc506d6d6a3b24d683d74c52fdf7d"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/Vad.kt",
+    "sha256": "16b9730104b4b374fc6607b3e333b7711da15321c7cc86e114a4139ba8e9ef1a"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/WhisperMel.kt",
+    "sha256": "91f67369d37ea7b80a0bbd53fd380cb2dc1aad3a963a2d085ebb3598a850a653"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/transport/McpHandler.kt",
+    "sha256": "02cc391bc960ad78fcb991497e8fb0958c6fa856fded22b2fb280e332511882c"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/transport/PeerStore.kt",
+    "sha256": "c8982aba998e591a1de8e1d2d05dbae338969c8c9c0dd465ceb8d5056500564f"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/transport/Server.kt",
+    "sha256": "5dcc640c370da67bc0dd24908583bbcef0405758dc044f4977fe866bec406616"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/ui/DialActivity.kt",
+    "sha256": "72944e9672f5e0978076c65986428694bd86cbc03b186a7ccaa84df7d148c719"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/ui/InCallActivity.kt",
+    "sha256": "9cda8ef239adcb64919342d469b59bceddcd401f2836d8a1af9ad081e2247f4d"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/ui/MainActivity.kt",
+    "sha256": "0e028d30de86ccf9acce30c5ad9a75a6d2a5bc4fcc927070380daf53603e071d"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/ui/SymbiosisAccessibilityService.kt",
+    "sha256": "1c7c4ead2c6b57d220df87cf14e661b2eb9c346f2e2843c5cb3bfbb31d6ad038"
+  },
+  {
+    "path": "android-runtime/app/src/main/res/drawable/ic_launcher_background.xml",
+    "sha256": "2c693e4316df2a6619a1e6db304839b6cad4270037ca4d1520f986b428a43799"
+  },
+  {
+    "path": "android-runtime/app/src/main/res/drawable/ic_launcher_foreground.xml",
+    "sha256": "488209be66f1b982c19e09619f2be0605a2b0f73dae52bff2c7dab44d739f12b"
+  },
+  {
+    "path": "android-runtime/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+    "sha256": "1c832bf194d8eecd439a92bcced0df144c9f566b934b3d7865e983d8ee8dbdeb"
+  },
+  {
+    "path": "android-runtime/app/src/main/res/values/strings.xml",
+    "sha256": "52a1022ca2ad30e861f11c3356ff69d0b6ca524060d2c21286444d1dbf2c38b0"
+  },
+  {
+    "path": "android-runtime/app/src/main/res/values/themes.xml",
+    "sha256": "5b926361b99415f010fb506b33c3d40fe9295a31a1e143cc82808dbb7fdb5dbb"
+  },
+  {
+    "path": "android-runtime/app/src/main/res/xml/network_security_config.xml",
+    "sha256": "95c969e33c85c533370a09551583da0e825aa9bc527fb5644f12150715e95ddb"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/AutomationTest.kt",
+    "sha256": "f5f1f26b9d05d055aaa30a8906f419dd8ad974e48e1588b5568d16676c7d6784"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/ConversationAudioTest.kt",
+    "sha256": "f685826ef4f161b3a785593983e0535f67a70dc2a37294e6bf283a857f2c4114"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/FileScopeReviewTest.kt",
+    "sha256": "f15ecac07e2d553a06cdc5d2030da4d1df4065e62fee247cae445fba5851ef0c"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/ManagedDialReviewTest.kt",
+    "sha256": "19723f6f9a88b6d0817b551e7d07cc496d4418b11760429b4c59bc6355b358ec"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/ProtocolSemanticsTest.kt",
+    "sha256": "b913be56c843608d3e3a439eaa45cfa0686badf4998cda74f847678d612954e3"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/ReviewFixesTest.kt",
+    "sha256": "352064c71fe9639b19160428e0dd1d07b75c17ec53a906d18b790b94d1ddcb36"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/ReviewRound3Test.kt",
+    "sha256": "d5b9fc72bb172488028465262acadc8cb5f617ed3079873264adf3c520ee4bef"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/RuntimePipelineReviewTest.kt",
+    "sha256": "09731b17f862ac9492b3ddf3aca26d594168735cfb7ab7c0d804c9d39371d8f8"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/ScopeGatingTest.kt",
+    "sha256": "4220dfd8a90be8a36660a7e2586bebe565b3b68b7b61602e0671cfa84495672d"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/StatefulPathsTest.kt",
+    "sha256": "d9e0ff305955c0654e8acfbd87379759a518b23f60cf09419e17d496881fce4e"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/TopicAuthorityReviewTest.kt",
+    "sha256": "fa7ff7e872179ee7ef8380c914a529501bdc6be8dd47f543e70436dc02bdd8e5"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/WorkflowTest.kt",
+    "sha256": "2a092b2f620afb0335b05b2de3f9058b961b636d5541a0a53f8a1ea5bda43bc3"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/telephony/TurnDetectorTest.kt",
+    "sha256": "6e55f11c30d4b8cf2590506d25c93af6ff90e35f4d3aa8743bea344725aae4f8"
+  },
+  {
+    "path": "android-runtime/app/src/test/resources/README.md",
+    "sha256": "acc6fdf14ab081210c24e842f4de60927a48220b545f799dcf622568523503f3"
+  },
+  {
+    "path": "android-runtime/app/src/test/resources/smartturn_golden.f32",
+    "sha256": "9f6ffb26529e23c30e1429539a011e976c447b933c544d1ca08a0703d09e7d5a"
+  },
+  {
+    "path": "android-runtime/app/src/test/resources/smartturn_golden.json",
+    "sha256": "32642a6cb8ceca24f5d2e23bbc5a8e7c609eb89be48d7876063589bc5c5ade30"
+  },
+  {
+    "path": "android-runtime/app/src/test/resources/smartturn_golden.pcm",
+    "sha256": "41eabe0e087702cf073afe4e5524ccdfa8ef43bdcee792a6a4d71b9cfd74f93c"
+  },
+  {
+    "path": "android-runtime/build.gradle.kts",
+    "sha256": "c0c7e8ff086d89779cc7b1b2c2e69434cd46a563eb99522fdae1ac7b44a6c7de"
+  },
+  {
+    "path": "android-runtime/gradle.properties",
+    "sha256": "8a09aa4197b2961efa8e9d11e1e52115135a7dbab89b1bfc6f6d7bc0e946b811"
+  },
+  {
+    "path": "android-runtime/gradle/wrapper/gradle-wrapper.jar",
+    "sha256": "cb0da6751c2b753a16ac168bb354870ebb1e162e9083f116729cec9c781156b8"
+  },
+  {
+    "path": "android-runtime/gradle/wrapper/gradle-wrapper.properties",
+    "sha256": "9efd7948359a68d9c80aa8d5df1717af1415c440b59d493040d3cfbd13885383"
+  },
+  {
+    "path": "android-runtime/gradlew",
+    "sha256": "a3421cbafaad9f2a4c07616566cab3e26c214988da7f1c2f7b8a1aaa1426cf9c"
+  },
+  {
+    "path": "android-runtime/gradlew.bat",
+    "sha256": "c9987fb6961dfbc8129caacc2267dddc489244f172c0ecbf4df036d8f64a8b1a"
+  },
+  {
+    "path": "android-runtime/settings.gradle.kts",
+    "sha256": "727a83f7df06e39810b6208122850c16c358c96b34c635956c909b335601e444"
+  },
+  {
+    "path": "docs/adding-a-phone.md",
+    "sha256": "245672ce2db34aaee3d2fa9a3a88cc1b25dda126227d1e786d42b5d55b29f6f6"
+  },
+  {
+    "path": "docs/architecture.md",
+    "sha256": "5e7ee0264a4462576b96721737a9bfc972ce7ec0cfcbb1c50c920922841134b9"
+  },
+  {
+    "path": "docs/automation.md",
+    "sha256": "a6758a1e757a42bb58fd5b9a2da8345712fb0bc3f52bbfa557aed9e52e8bfac2"
+  },
+  {
+    "path": "docs/conversation-mode.md",
+    "sha256": "6c8d0b020ce7d6430d81b6d475b8f4b895a9a728141010b0a0dd871a4fc69e67"
+  },
+  {
+    "path": "docs/development.md",
+    "sha256": "2df5c9d915263d8644bcc1f4e816dc168bbcb8f05e768afa52b13a3c11295556"
+  },
+  {
+    "path": "docs/disclaimer.md",
+    "sha256": "3e074e75ad561ba0e658e27585035169649f97fe23c00c50e704f4775f0652eb"
+  },
+  {
+    "path": "docs/inbound.md",
+    "sha256": "034545f6d36d2a25e6bfed74cb23784d958537d3ce376a9b633994b7db478ed4"
+  },
+  {
+    "path": "docs/protocol.md",
+    "sha256": "f781ac4c98a86233e70b7aa23fbd0e0c2ec208e30840ad21c14111da530c8e3a"
+  },
+  {
+    "path": "docs/publishing.md",
+    "sha256": "5f4de5fedf06d17d824f495446611e5812627368b66b93496febc6b955bc26a0"
+  },
+  {
+    "path": "docs/review.md",
+    "sha256": "f40068d15eedc3831892aea27217ccb06fcf6c2f86f76ad7c0f31c6bb5e51e3c"
+  },
+  {
+    "path": "docs/security.md",
+    "sha256": "91b044ec99ae5541a9e916cff314051960c2bc8b1ef7fa6b1887e875162e3f76"
+  },
+  {
+    "path": "gateway/.gitignore",
+    "sha256": "b4f284c81337354adca3770cc19f11daefb281e092fdd13004e40fa9510b9334"
+  },
+  {
+    "path": "gateway/README.md",
+    "sha256": "14845f7a0019a2266c0886e20146d774a201ae890e85c5ac174b10004b9b67b6"
+  },
+  {
+    "path": "gateway/cmd/gateway/main.go",
+    "sha256": "8f7c21dd722fb4e903701d56b99c9222af2170220c078bd13aef92f97e98a3b4"
+  },
+  {
+    "path": "gateway/cmd/gateway/main_test.go",
+    "sha256": "cc51ecb4e08b986aeda9771b67cd2246ee28f8783d19fd5b5d4627f176bb96c7"
+  },
+  {
+    "path": "gateway/config.example.yaml",
+    "sha256": "e9d94d508f5775da3cd5265e6dab124ab067542c6818b3018d2c2f146de7f49d"
+  },
+  {
+    "path": "gateway/go.mod",
+    "sha256": "6c0ac3f411e1d2bf3741fe0302b4e44e092825dfc7dccb2add993dff7f57aab6"
+  },
+  {
+    "path": "gateway/go.sum",
+    "sha256": "157b46804084fad5fcd35cb935cd6b4c2fc2b5cca2987ce9abe7fed684122a11"
+  },
+  {
+    "path": "gateway/internal/agent/agent.go",
+    "sha256": "f23d6af5daef7ef7b39e2cdef0a380f8deae6f5b0399a2a9731ddce68cb48e7b"
+  },
+  {
+    "path": "gateway/internal/agent/agent_test.go",
+    "sha256": "78438dc51ea0d169f2a704b12dad9a36cca43cbf0cfe83e150c2c5abaa8194a9"
+  },
+  {
+    "path": "gateway/internal/agent/stopreason_test.go",
+    "sha256": "db099021c8cfe0dac25788a553b3377675da3db9c39755e35e59cbc7d8f56b74"
+  },
+  {
+    "path": "gateway/internal/canonicaljson/canonicaljson.go",
+    "sha256": "4fd4e30ff371b8cea3bd8a5119c5b62bc10a5cb3cb72bfdb7297569b92a57e13"
+  },
+  {
+    "path": "gateway/internal/config/config.go",
+    "sha256": "5fc1a0f0cbe6a92e6d4832f685095f5703bf89470a7b9741d3328a0ef7bfacbc"
+  },
+  {
+    "path": "gateway/internal/config/config_test.go",
+    "sha256": "56930a235c7508a545ae298e1c62586dd3bdabdc0859f679dc641af89b5e7c95"
+  },
+  {
+    "path": "gateway/internal/config/perm_unix.go",
+    "sha256": "e9354d7c7c9bf947ec0475f2d45625db99168fd240f4f02ca39bf2e4cc93caf6"
+  },
+  {
+    "path": "gateway/internal/config/perm_windows.go",
+    "sha256": "d0d164a04a9f2c90eb86d80439877ae2f8a9378c7d17645cbd515f6965f8326a"
+  },
+  {
+    "path": "gateway/internal/config/thinking_test.go",
+    "sha256": "6e17361a6649da9ea6eb350246923ea2e817420a3798363eb97af2022098e64e"
+  },
+  {
+    "path": "gateway/internal/device/canonical.go",
+    "sha256": "cbde9dddbfbe2f8312f5544420bb40b871d8986a0005cf323e0d03763dc85afe"
+  },
+  {
+    "path": "gateway/internal/device/events.go",
+    "sha256": "462a4c7741973ca3c9633ae5bc7bbe4d9aaea139c2c0d44c8a9561f49b419a3c"
+  },
+  {
+    "path": "gateway/internal/device/events_concurrency_test.go",
+    "sha256": "5c8874d3e099f08f2b8a417ae52360437906fa6e085852d8ad6509f83ff1a497"
+  },
+  {
+    "path": "gateway/internal/device/events_recovery_test.go",
+    "sha256": "79696bd2b1e1a9e469147b85429538b3aeb859020e3b2957b96e45b033b23199"
+  },
+  {
+    "path": "gateway/internal/device/events_test.go",
+    "sha256": "c8b51a915fcd09dbd6af6368a53edb54b7c3055c1d3524515c2f1da063778b9f"
+  },
+  {
+    "path": "gateway/internal/device/mcp.go",
+    "sha256": "8e84ce6abcec6431009496c4876cadcad702b1928ef71bd3a1909e31151f6c12"
+  },
+  {
+    "path": "gateway/internal/device/mcp_singleflight_test.go",
+    "sha256": "009f060d9adb555334fe84673962740fd792e253a3e0b67f071787cc8cbc6ef7"
+  },
+  {
+    "path": "gateway/internal/device/mcp_test.go",
+    "sha256": "6fac0afe123aaa4c680f965de9ef635d55e8fd4d184fb3adb2f35942c49da638"
+  },
+  {
+    "path": "gateway/internal/device/pair.go",
+    "sha256": "0ee55e055f10cf0e4bc7008b029e49612d4341fe53439125af7a6c2196d77fcb"
+  },
+  {
+    "path": "gateway/internal/device/response_validation_test.go",
+    "sha256": "0ef2052f8a5ea6bbfb435afa76da501e14c884be67e3d419b0bf09dd90ef9e6d"
+  },
+  {
+    "path": "gateway/internal/device/subscribe_denied_test.go",
+    "sha256": "ec31c9ba752ec5b49beb6790a5ee32e3ff951f6cff866a76b5193e3cf1da6052"
+  },
+  {
+    "path": "gateway/internal/device/timeout_test.go",
+    "sha256": "d5801a38413f7c730212bfd5b05794e9d319903241d6cc31ba082078ebfc4955"
+  },
+  {
+    "path": "gateway/internal/device/tls.go",
+    "sha256": "8dc03efdafdab52b81d6e226d2256d75e341b05d5236348f2b1331d3e78f9e0a"
+  },
+  {
+    "path": "gateway/internal/device/tls_test.go",
+    "sha256": "24f588d92264a3a60aaf97b90b6d6ce34bd35385f62ee8184612f4317601ceb8"
+  },
+  {
+    "path": "gateway/internal/device/tool_outcome_test.go",
+    "sha256": "835789e0278e300c708f8bffea1e725e2af577a9d8a3f11e1cf02f768e1a5fe8"
+  },
+  {
+    "path": "gateway/internal/fakephone/fakephone.go",
+    "sha256": "53ab3707daa090dd81a56a202c26e20b0a9346abd7d7ceaa6dce88d71483e8f9"
+  },
+  {
+    "path": "gateway/internal/mcpserver/concurrency_test.go",
+    "sha256": "9c8d7e72ad18737735a6ba762be2f3d6804505b7197512caabd4d613599ce518"
+  },
+  {
+    "path": "gateway/internal/mcpserver/converse.go",
+    "sha256": "95ad414dfc53fe289e2a1bd9b713a29ace736f5b32a6fe507b09075d53ac5985"
+  },
+  {
+    "path": "gateway/internal/mcpserver/converse_test.go",
+    "sha256": "696636d318c8ff1565612bd90e1e6b2893841279c58628f38365013bf664d276"
+  },
+  {
+    "path": "gateway/internal/mcpserver/converse_unix.go",
+    "sha256": "08669620abf5ffeba436a6ea98401f8e3c2dc8a88a926510ccb2f1bc20abf82f"
+  },
+  {
+    "path": "gateway/internal/mcpserver/converse_windows.go",
+    "sha256": "88012f81a22aa8e97ba2def389cf31f29f1e46bb4d8486ed208abbe354461d2a"
+  },
+  {
+    "path": "gateway/internal/mcpserver/server.go",
+    "sha256": "9e13ac4a51d3129f2585d72e8d2eff1494d0599368acfa2cb09651d4bc603c4c"
+  },
+  {
+    "path": "gateway/internal/mcpserver/server_test.go",
+    "sha256": "704902220b06b8fbd1a5cdaf5fa577cdbe1fff3b7291468bda49148e6e297814"
+  },
+  {
+    "path": "gateway/internal/mcpserver/shutdown_test.go",
+    "sha256": "189b32a69ba122f0d68f90f9732a70f6c606ce430767787bb838b2704c146088"
+  },
+  {
+    "path": "gateway/internal/provider/anthropic.go",
+    "sha256": "38f35a8d6d392a38633a56619358e783f812186cfe28a286a99d6d7e446f61ad"
+  },
+  {
+    "path": "gateway/internal/provider/anthropic_test.go",
+    "sha256": "c62fd50756a1cb8d3bf2104d27fb5c311e9eb591855e46970bd88ec701a8cc02"
+  },
+  {
+    "path": "gateway/internal/provider/anthropic_thinking_test.go",
+    "sha256": "a7fad541bb2172493491cc6cbcaf2a216e0928019dec6e2a714a6b3029cb8150"
+  },
+  {
+    "path": "gateway/internal/provider/factory.go",
+    "sha256": "6cc08d567c52f23b3fad734793b58bcee338cd7541db5697fcda2ab9e2826264"
+  },
+  {
+    "path": "gateway/internal/provider/factory_test.go",
+    "sha256": "fd7676a4b3767baa6d6e282a1b1276912bb661de877585ba8d2d469c0268419f"
+  },
+  {
+    "path": "gateway/internal/provider/fake.go",
+    "sha256": "124034f03969ceab6c22544a697b58da83d4aeb2bb5e9cd3e4ac017392b83c2c"
+  },
+  {
+    "path": "gateway/internal/provider/gemini.go",
+    "sha256": "a6518e322616ce9cddffefff531bd57bb24edb0eb7e0c05cc0920afd5e5e6764"
+  },
+  {
+    "path": "gateway/internal/provider/gemini_test.go",
+    "sha256": "8f23ed610ff15a19088b171fe6fbd5df06bef374b211630dc5993311bdc7fe9f"
+  },
+  {
+    "path": "gateway/internal/provider/http.go",
+    "sha256": "6c9eaf63517ef299981ad85e5c1d58e5d94de9c5065438a1ac85fdb2cdf889da"
+  },
+  {
+    "path": "gateway/internal/provider/openai.go",
+    "sha256": "0a84ff878396e598959536c1e52b0d2e2128ff917e171332eb704bad9530bfee"
+  },
+  {
+    "path": "gateway/internal/provider/openai_baseurl_test.go",
+    "sha256": "373803ec62ac40668e3cf2f5f2d6dde5db24c4078412525a108b025c96d14ef1"
+  },
+  {
+    "path": "gateway/internal/provider/openai_test.go",
+    "sha256": "f09190d983754de76419c6d509df04705c07d7535304df98ed115c314ba905c6"
+  },
+  {
+    "path": "gateway/internal/provider/provider.go",
+    "sha256": "be2445a400f9540b59b5a6b9bd0a1573d4059d28dcd774c39d2cebd4ffa1d301"
+  },
+  {
+    "path": "gateway/internal/provider/retryafter_test.go",
+    "sha256": "a300d1ddb55f2d2f10e8b64327c78567cc2a8240914b89891dc4e164e253e9cf"
+  },
+  {
+    "path": "gateway/internal/provider/schema.go",
+    "sha256": "7d8eb2c8052f71e9cc7071f95739c337693bd1454058803b4ec39d2e25bf828c"
+  },
+  {
+    "path": "gateway/internal/provider/testhelpers_test.go",
+    "sha256": "51236a28df26766a7a6860f1069bd8b82766589c212274be93b8b5b81d4b4056"
+  },
+  {
+    "path": "gateway/internal/provider/toolnames.go",
+    "sha256": "d26651dc0a1507b36793bc866f0b763dd1eabf8ce64b0298974134de2ae4b6aa"
+  },
+  {
+    "path": "gateway/internal/provider/toolnames_test.go",
+    "sha256": "4af7d635985dca406c7649330573b9cd484db9f5ff56c8d1358578cf9b6aa5ef"
+  },
+  {
+    "path": "gateway/internal/store/mkdir_test.go",
+    "sha256": "686a45a9a10f5dfe1e6e459c1062ece8690146983cc2903c880f3ce3049a96ab"
+  },
+  {
+    "path": "gateway/internal/store/store.go",
+    "sha256": "9a9dccc85537f14c60ece0710524dff51973a134212d578ed487db8256cf77ef"
+  },
+  {
+    "path": "gateway/internal/store/store_test.go",
+    "sha256": "89e04eff6b918c204884d17b2526c468710a66814ed3845bbaa5055388efa511"
+  },
+  {
+    "path": "licenses/droid-mcp-Apache-2.0.txt",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  {
+    "path": "licenses/smart-turn-BSD-2-Clause.txt",
+    "sha256": "0d66364067f678c08586ebb60a16a2aed4fa081ec11057df35585759ce0e774f"
+  },
+  {
+    "path": "protocol/schemas/README.md",
+    "sha256": "b2f5416765fb0171c75f8ac0ce7d1873f9a89b5251faf82edd61ae9707e00ae2"
+  },
+  {
+    "path": "protocol/schemas/audit-entry.json",
+    "sha256": "e090b5e56335769eb66e662f60e9f417d80c0f67813ef63fcb19f823972122da"
+  },
+  {
+    "path": "protocol/schemas/capability-manifest.json",
+    "sha256": "67f6ccac748ad1deb8795efa0c96bc5ac724cb698b4d5d33cc45d488d45a1e6a"
+  },
+  {
+    "path": "protocol/schemas/event.json",
+    "sha256": "4bf2f5b628e4dd9277781d31978b007d08a8c5adac12cf5028f8cd4a1a2705e4"
+  },
+  {
+    "path": "protocol/schemas/events-ws-frames.json",
+    "sha256": "1e14cdfa909407e5fbcf4ea86413d18cb9c62d6b0313f62a451a7c468407d81b"
+  },
+  {
+    "path": "protocol/schemas/pair-request.json",
+    "sha256": "c8589f7dd3a346b52586ebb27666abbc3f49aa9665b4ba69d1822fa0ac41ffa4"
+  },
+  {
+    "path": "protocol/schemas/pair-response.json",
+    "sha256": "5a48b107316c59278578fd34f06fc28f5a77593a1da706c961b5ab27e6548103"
+  },
+  {
+    "path": "protocol/schemas/policy.json",
+    "sha256": "44637831de0edc132a0e0d425909769e2f9ef74ce26f01fcd8d36c9455a904fa"
+  },
+  {
+    "path": "protocol/schemas/session-frames.json",
+    "sha256": "e5eb95325d8ef24ed511ced0ba362c0a627194836d6755788d4904a480d15021"
+  },
+  {
+    "path": "protocol/schemas/subscription.json",
+    "sha256": "aa83767dc8268d93212b2e28ee70d6281ff6006e9710da1457a44b26427a6e7d"
+  },
+  {
+    "path": "protocol/schemas/tool-call-result.json",
+    "sha256": "72968ebee6db46bcbc73a27bd06851c916eebf762bd43d4877354ff39c670f6d"
+  },
+  {
+    "path": "protocol/schemas/trusted-peer.json",
+    "sha256": "2e56119804d16931611fa92fdb3aa8923bd6cfab85bd5f5af7caa30e782e25de"
+  },
+  {
+    "path": "skills/README.md",
+    "sha256": "1cb94362aad418b94de7d3c2bd1168a6c8092214239b1c828aa1b62f40b81339"
+  },
+  {
+    "path": "skills/hermes/android-agent-harness-phone/SKILL.md",
+    "sha256": "5e8602fff2dc498d582cb91b776a8e495eddaed4283282ed2c750b70cbb3da5f"
+  },
+  {
+    "path": "skills/messaging/wait_for_confirmation_text.md",
+    "sha256": "10a735b4c32f787a6242b0b866a5d6140aa5c480f70755e21df6413428326bec"
+  },
+  {
+    "path": "skills/telephony/call_business_and_reserve.md",
+    "sha256": "ac2953df089845b288a55efa10cd9d6b3cf8cd7da8f94e02da38173ec5fb0b42"
+  },
+  {
+    "path": "tools/converse.py",
+    "sha256": "e559d768043a2ba014de9bca7b16ff81d8860d075cd83ff959ee5b87cce74eb3"
+  },
+  {
+    "path": "tools/dry_call.py",
+    "sha256": "e65f6395d71245418386a3ca35dcdf5faebe7d74285114693c746ab786641293"
+  },
+  {
+    "path": "tools/generate_turn_fixture.py",
+    "sha256": "e3331343c9f8ca8e8e772d5fc1b0a768f2ecb34885f21a55ba5f1ec1155d6096"
+  },
+  {
+    "path": "tools/inbound.py",
+    "sha256": "7cf92fc2dfa281824913387f2b9a0d0ac714b25468d013c66e6ea884ab80ffd5"
+  },
+  {
+    "path": "tools/judgement_eval.py",
+    "sha256": "b4023093a48bdfb8df89391a891d6577c43414c322cafe1ef36d1ffb7e66d019"
+  },
+  {
+    "path": "tools/privapp/build_module.py",
+    "sha256": "fa6ebe0ce889e334684b45155a3437ff66a70a2d29c4e404666afb9671c0b342"
+  },
+  {
+    "path": "tools/privapp/module.prop",
+    "sha256": "aaa159219b28a3da27f41993ef19b984fffa1dc56ab2fd7441aaecc611663b90"
+  },
+  {
+    "path": "tools/privapp/privapp-permissions-symbiosis.xml",
+    "sha256": "9830666d6d501f86b8bd50fefb97484844801e988470f9c7661b81f8ca7231e1"
+  },
+  {
+    "path": "tools/publication.py",
+    "sha256": "fe37832787d3d64ddeda186ef65ff17b37327143e479c68174f39cf54b957142"
+  },
+  {
+    "path": "tools/requirements.txt",
+    "sha256": "2c5c4bf96e2dfbc61730bb774d352a6b921475014a294a0b5c69ea6aa003c8af"
+  },
+  {
+    "path": "tools/sms_mesh.py",
+    "sha256": "793299b0843cdd5dafc7023d3028955678f57242642a8909c9323fc240e8ac6b"
+  },
+  {
+    "path": "tools/test_converse_sim.py",
+    "sha256": "a15fa6d13c060d5c9ef99c19966713c8a7d3a7af5d77702abfbb14f1e68b3345"
+  },
+  {
+    "path": "tools/test_inbound.py",
+    "sha256": "3f9f72d46fd3f804c34628721cef1f24f28cacbc7138fd979fc54df5713a8d78"
+  },
+  {
+    "path": "tools/test_publication.py",
+    "sha256": "9a7e106a2f6c4c1711b468ab70d9971ce313784d741879a03ab5b1ae0fccda3b"
+  },
+  {
+    "path": "tools/test_python_safety.py",
+    "sha256": "ee2df6080db75c60e429dab72bc375ddf688986f06c70d1bdf2f03aeb50a9a14"
+  },
+  {
+    "path": "tools/turn-fixture-requirements.txt",
+    "sha256": "353c811caf8b6c0cd141859ac4efe83a99c4e8e43171214926afa8a73ecc3c4e"
+  },
+  {
+    "path": "tools/verify_device.py",
+    "sha256": "5f686fbfd809cda9d1d574e7d5b8f9c82df3781b855e9b4a0af9cabe14fe078b"
+  }
+]

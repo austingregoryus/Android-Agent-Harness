@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/pair-request.json",
+  "title": "PairRequest",
+  "description": "Body of POST /pair (docs/protocol.md section 2). The UI mints a one-time code (8 chars, 5-minute TTL, single use); a client exchanges it for a scoped bearer token. Requested scopes are clamped to whatever the code was minted for (the UI chooses when it mints), so the effective scopes/max_action_class in the response may be narrower than requested here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "label", "scopes", "max_action_class"],
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^[A-Z0-9]{4}-[A-Z0-9]{4}$",
+      "description": "One-time pairing code, 8 chars formatted as XXXX-XXXX, 5-minute TTL, single use."
+    },
+    "label": {
+      "type": "string",
+      "description": "Human label for the resulting trusted_peers row."
+    },
+    "scopes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Requested capability globs; clamped server-side to the code's minted scopes."
+    },
+    "max_action_class": {
+      "type": "string",
+      "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"],
+      "description": "Requested ceiling; clamped server-side to the code's minted ceiling."
+    }
+  },
+  "examples": [
+    {
+      "code": "K7Q2-9F4A",
+      "label": "homelab-gateway",
+      "scopes": ["messaging.*", "telephony.*", "device.*", "events.*", "contacts.*", "notifications.*"],
+      "max_action_class": "COMMUNICATION"
+    }
+  ]
+}

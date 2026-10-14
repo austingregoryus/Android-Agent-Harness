@@ -1,0 +1,20 @@
+{
+  "expected_probability": 0.00913,
+  "feature_shape": [
+    80,
+    800
+  ],
+  "features_sha256": "9f6ffb26529e23c30e1429539a011e976c447b933c544d1ca08a0703d09e7d5a",
+  "fixture": "non-speech-chirp-tone-noise-v1",
+  "model_sha256": "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f",
+  "numpy_version": "2.4.6",
+  "onnxruntime_version": "1.28.0",
+  "pcm_sha256": "41eabe0e087702cf073afe4e5524ccdfa8ef43bdcee792a6a4d71b9cfd74f93c",
+  "probability_tolerance": 0.01,
+  "reference": "transformers.WhisperFeatureExtractor NumPy backend, chunk_length=8, do_normalize=True",
+  "sample_rate": 16000,
+  "samples": 128000,
+  "seed": 20261014,
+  "silent_prefix_samples": 80000,
+  "transformers_version": "5.16.1"
+}

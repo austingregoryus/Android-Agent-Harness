@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/capability-manifest.json",
+  "title": "CapabilityManifest",
+  "description": "One capability's metadata as exposed under a tools/list entry's `_meta.symbiosis` (docs/protocol.md sections 3.1 and 8). Runtime capabilities use dotted namespaces from the spec (telephony.*, messaging.*, contacts.*, notifications.*, apps.*, ui.*, media.*, device.*, location.*, sensors.*, files.*, connectivity.*, events.*); MCP tool names are the capability names verbatim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "action_class",
+    "tier",
+    "rate_class",
+    "emits_events"
+  ],
+  "properties": {
+    "action_class": {
+      "type": "string",
+      "enum": [
+        "READ_ONLY",
+        "AUTOMATION",
+        "SENSITIVE_READ",
+        "LOW_RISK",
+        "COMMUNICATION",
+        "EXTERNAL_COMMITMENT",
+        "DEVICE_MUTATION",
+        "DESTRUCTIVE"
+      ],
+      "description": "Determines both scope-ceiling visibility (section 2) and the policy pipeline's class default (section 6)."
+    },
+    "tier": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "description": "0 (lowest) to 5 (highest). protocol.md v0 does not further define tier semantics beyond this numeric ordering."
+    },
+    "rate_class": {
+      "type": "string",
+      "enum": [
+        "none",
+        "sms",
+        "call",
+        "install",
+        "mutation",
+        "wake",
+        "automation",
+        "ai"
+      ],
+      "description": "Which rate_counters bucket (section 6, pipeline step 8) this capability's calls consume."
+    },
+    "emits_events": {
+      "type": "array",
+      "description": "Topics (see event.json #/$defs/topic) this capability may cause to be journaled.",
+      "items": {
+        "$ref": "event.json#/$defs/topic"
+      }
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^droid-mcp:.+$",
+      "description": "Present only when this capability is a passthrough of a droid-mcp tool: \"droid-mcp:<original_name>\" (section 8). Absent for natively implemented capabilities."
+    },
+    "version": {
+      "type": "string",
+      "description": "Capability version string (e.g. \"0.1\")."
+    }
+  },
+  "examples": [
+    {
+      "action_class": "COMMUNICATION",
+      "tier": 2,
+      "rate_class": "sms",
+      "emits_events": [
+        "messaging.sms_received"
+      ]
+    },
+    {
+      "action_class": "EXTERNAL_COMMITMENT",
+      "tier": 3,
+      "rate_class": "call",
+      "emits_events": [
+        "call.state_changed",
+        "call.ringing",
+        "call.connected",
+        "call.ended",
+        "session.state"
+      ],
+      "source": "droid-mcp:telephony.place_call"
+    }
+  ]
+}

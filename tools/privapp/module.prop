@@ -1,0 +1,6 @@
+id=symbiosis_privapp
+name=Android Agent Harness Privileged Install
+version=v1.0
+versionCode=1
+author=Android Agent Harness contributors
+description=Installs Android Agent Harness as a privileged system app (system/priv-app) with the privapp-permissions allowlist entries call audio needs on a rooted phone. See docs/adding-a-phone.md "Privileged install".

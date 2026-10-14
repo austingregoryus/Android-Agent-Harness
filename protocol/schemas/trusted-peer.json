@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/trusted-peer.json",
+  "title": "TrustedPeer",
+  "description": "A row of the trusted_peers table (docs/protocol.md section 2). A token belongs to a peer; the phone stores only sha256(token), never the token itself. The Admin token (scopes [\"*\"], ceiling DESTRUCTIVE) is created on first run, stored in Keystore-backed encrypted preferences, and shown once in the UI; it is the only token that can call /pair issuance from the UI path.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["peer_id", "label", "token_sha256", "scopes", "max_action_class", "created_at", "expires_at", "revoked_at", "last_seen_at"],
+  "properties": {
+    "peer_id": {
+      "type": "string",
+      "pattern": "^peer_[0-9a-f]{12}$",
+      "description": "\"peer_\" + 12 hex."
+    },
+    "label": {
+      "type": "string",
+      "description": "Human label, e.g. \"homelab-gateway\"."
+    },
+    "token_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "sha256 of the random 32-byte base64url token; the phone never stores the raw token."
+    },
+    "scopes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Capability globs, e.g. [\"messaging.*\", \"device.get_*\", \"events.*\"]. A scope's \"*\" matches within one dotted segment or, when the whole segment is \"*\", across segments; a bare \"*\" matches everything.",
+      "examples": [["messaging.*", "telephony.*", "device.*", "events.*", "contacts.*", "notifications.*"]]
+    },
+    "max_action_class": {
+      "type": "string",
+      "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"],
+      "description": "Ceiling: a tool is visible to this peer iff a scope matches AND the tool's action class <= this ceiling."
+    },
+    "created_at": {
+      "type": ["integer", "null"],
+      "description": "Epoch milliseconds. protocol.md groups created_at with the other three timestamp columns as nullable INTEGER; in practice this is always set."
+    },
+    "expires_at": {
+      "type": ["integer", "null"]
+    },
+    "revoked_at": {
+      "type": ["integer", "null"],
+      "description": "Revoking a peer closes its WebSockets and ends its sessions within one second."
+    },
+    "last_seen_at": {
+      "type": ["integer", "null"]
+    }
+  },
+  "examples": [
+    {
+      "peer_id": "peer_0123456789ab",
+      "label": "homelab-gateway",
+      "token_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "scopes": ["messaging.*", "telephony.*", "device.*", "events.*", "contacts.*", "notifications.*"],
+      "max_action_class": "COMMUNICATION",
+      "created_at": 1757139000000,
+      "expires_at": null,
+      "revoked_at": null,
+      "last_seen_at": 1757139500000
+    }
+  ]
+}

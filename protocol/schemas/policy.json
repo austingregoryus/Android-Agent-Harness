@@ -1,0 +1,408 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/policy.json",
+  "title": "Policy resource and internal approval row",
+  "description": "Current shapes from Runtime.resourceRead, PolicyModel, ApprovalManager and Db. Root accepts the admin-only phone://policy resource or a raw internal pending_actions SQLite row. Pending rows are not exposed as an MCP resource; the approval_required tool-result envelope is defined separately in tool-call-result.json. Use $defs/policyConfig for the nested serialized configuration. Code defaults are annotations, not a guarantee about persisted configuration.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/policyResource"
+    },
+    {
+      "$ref": "#/$defs/pendingAction"
+    }
+  ],
+  "$defs": {
+    "actionClass": {
+      "type": "string",
+      "enum": [
+        "READ_ONLY",
+        "AUTOMATION",
+        "SENSITIVE_READ",
+        "LOW_RISK",
+        "COMMUNICATION",
+        "EXTERNAL_COMMITMENT",
+        "DEVICE_MUTATION",
+        "DESTRUCTIVE"
+      ],
+      "description": "Ordered from least to most sensitive."
+    },
+    "policyDecision": {
+      "type": "string",
+      "enum": [
+        "ALLOW",
+        "DENY",
+        "APPROVE"
+      ]
+    },
+    "rateClass": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "SMS",
+        "CALL",
+        "INSTALL",
+        "MUTATION",
+        "WAKE",
+        "AUTOMATION",
+        "AI"
+      ]
+    },
+    "rateLimitWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "perHour": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "perDay": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "perHour",
+        "perDay"
+      ]
+    },
+    "policyConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "classDefaults": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/actionClass"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/policyDecision"
+          },
+          "default": {
+            "READ_ONLY": "ALLOW",
+            "AUTOMATION": "ALLOW",
+            "SENSITIVE_READ": "ALLOW",
+            "LOW_RISK": "ALLOW",
+            "COMMUNICATION": "ALLOW",
+            "EXTERNAL_COMMITMENT": "ALLOW",
+            "DEVICE_MUTATION": "ALLOW",
+            "DESTRUCTIVE": "DENY"
+          }
+        },
+        "rateLimits": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/rateClass"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/rateLimitWindow"
+          },
+          "default": {
+            "SMS": {
+              "perHour": 20,
+              "perDay": 100
+            },
+            "CALL": {
+              "perHour": 5,
+              "perDay": 20
+            },
+            "INSTALL": {
+              "perHour": 3,
+              "perDay": 3
+            },
+            "MUTATION": {
+              "perHour": 300,
+              "perDay": 2000
+            },
+            "WAKE": {
+              "perHour": 6,
+              "perDay": 24
+            },
+            "AUTOMATION": {
+              "perHour": 240,
+              "perDay": 2000
+            },
+            "AI": {
+              "perHour": 120,
+              "perDay": 1000
+            }
+          }
+        },
+        "contactAllowlist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "contactDenylist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "quietHours": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "startMinute": {
+              "type": "integer",
+              "default": 1320
+            },
+            "endMinute": {
+              "type": "integer",
+              "default": 420
+            }
+          },
+          "required": [
+            "enabled",
+            "startMinute",
+            "endMinute"
+          ]
+        },
+        "approvalWaitMs": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 20000
+        },
+        "approvalMaxWaitMs": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 120000
+        },
+        "pendingTtlMs": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 600000
+        },
+        "ai": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "baseUrl": {
+              "type": "string",
+              "default": "http://127.0.0.1:11430/v1"
+            },
+            "model": {
+              "type": "string",
+              "default": "local-model"
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 60000
+            }
+          },
+          "required": [
+            "baseUrl",
+            "model",
+            "timeoutMs"
+          ]
+        }
+      },
+      "required": [
+        "classDefaults",
+        "rateLimits",
+        "contactAllowlist",
+        "contactDenylist",
+        "quietHours",
+        "approvalWaitMs",
+        "approvalMaxWaitMs",
+        "pendingTtlMs",
+        "ai"
+      ],
+      "description": "PolicyConfig serialized with encodeDefaults=true. Configuration uses camelCase and uppercase enum names. Omitted classes in persisted maps use code defaults at evaluation time."
+    },
+    "policyResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/policyConfig"
+        },
+        "overrides": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/policyDecision"
+          }
+        },
+        "emergency_stop": {
+          "type": "boolean"
+        },
+        "observe_only": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "config",
+        "overrides",
+        "emergency_stop",
+        "observe_only"
+      ],
+      "description": "Read-only admin resource. Observe-only permits READ_ONLY, AUTOMATION and SENSITIVE_READ; mutating batch steps are still checked individually."
+    },
+    "pendingAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pending_action_id": {
+          "type": "string",
+          "pattern": "^pa_"
+        },
+        "created_at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expires_at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "peer_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "May be null or the admin identity as well as a paired peer ID."
+        },
+        "correlation_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capability": {
+          "type": "string"
+        },
+        "action_class": {
+          "$ref": "#/$defs/actionClass"
+        },
+        "args_json": {
+          "type": "string",
+          "contentMediaType": "application/json",
+          "description": "Serialized JSON object written by ApprovalManager; this is stored request data, not the redacted audit copy."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "denied",
+            "expired",
+            "cancelled",
+            "executed"
+          ]
+        },
+        "resolved_at": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "result_json": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "contentMediaType": "application/json",
+          "description": "Serialized execution result or cancellation reason; null until written."
+        }
+      },
+      "required": [
+        "pending_action_id",
+        "created_at",
+        "expires_at",
+        "peer_id",
+        "correlation_id",
+        "capability",
+        "action_class",
+        "args_json",
+        "status",
+        "resolved_at",
+        "result_json"
+      ],
+      "description": "Raw pending_actions database row, including nullable columns. Different from the in-memory PendingAction object and approval_required result."
+    }
+  },
+  "examples": [
+    {
+      "config": {
+        "classDefaults": {
+          "READ_ONLY": "ALLOW",
+          "AUTOMATION": "ALLOW",
+          "SENSITIVE_READ": "ALLOW",
+          "LOW_RISK": "ALLOW",
+          "COMMUNICATION": "ALLOW",
+          "EXTERNAL_COMMITMENT": "ALLOW",
+          "DEVICE_MUTATION": "ALLOW",
+          "DESTRUCTIVE": "DENY"
+        },
+        "rateLimits": {
+          "SMS": {
+            "perHour": 20,
+            "perDay": 100
+          },
+          "CALL": {
+            "perHour": 5,
+            "perDay": 20
+          },
+          "INSTALL": {
+            "perHour": 3,
+            "perDay": 3
+          },
+          "MUTATION": {
+            "perHour": 300,
+            "perDay": 2000
+          },
+          "WAKE": {
+            "perHour": 6,
+            "perDay": 24
+          },
+          "AUTOMATION": {
+            "perHour": 240,
+            "perDay": 2000
+          },
+          "AI": {
+            "perHour": 120,
+            "perDay": 1000
+          }
+        },
+        "contactAllowlist": [],
+        "contactDenylist": [],
+        "quietHours": {
+          "enabled": false,
+          "startMinute": 1320,
+          "endMinute": 420
+        },
+        "approvalWaitMs": 20000,
+        "approvalMaxWaitMs": 120000,
+        "pendingTtlMs": 600000,
+        "ai": {
+          "baseUrl": "http://127.0.0.1:11430/v1",
+          "model": "local-model",
+          "timeoutMs": 60000
+        }
+      },
+      "overrides": {},
+      "emergency_stop": false,
+      "observe_only": false
+    },
+    {
+      "pending_action_id": "pa_000000000001",
+      "created_at": 1757139000000,
+      "expires_at": 1757139600000,
+      "peer_id": "peer_0123456789ab",
+      "correlation_id": "corr_0000000000000001",
+      "capability": "messaging.send_sms",
+      "action_class": "EXTERNAL_COMMITMENT",
+      "args_json": "{\"to\":\"+12025550100\",\"text\":\"Synthetic test\"}",
+      "status": "pending",
+      "resolved_at": null,
+      "result_json": null
+    }
+  ]
+}

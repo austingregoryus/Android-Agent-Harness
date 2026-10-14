@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/tool-call-result.json",
+  "title": "ToolCallResult",
+  "description": "The JSON-RPC `result` of a tools/call request (docs/protocol.md section 3.2). Policy outcomes (denied, approval_required, approval_timeout, rate_limited, observe_only, emergency_stop, permission.missing, capability.unavailable, capability.failed) are tool results with isError: true and a structured structuredContent.error code, not JSON-RPC errors, so an agent can read and recover from them. JSON-RPC errors (-32700, -32600, -32601, -32602, -32000) are reserved for transport-level problems and are out of scope for this schema, which models only the tools/call result payload.",
+  "oneOf": [
+    { "$ref": "#/$defs/success" },
+    { "$ref": "#/$defs/errorResult" }
+  ],
+  "$defs": {
+    "contentItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["text"],
+          "description": "protocol.md v0 examples only show the text content type; MCP in general allows others, but this closed set reflects what the spec documents."
+        },
+        "text": { "type": "string" }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["correlationId", "auditId", "durationMs"],
+      "properties": {
+        "correlationId": { "type": "string", "pattern": "^corr_" },
+        "auditId": { "type": "integer", "minimum": 1 },
+        "durationMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "success": {
+      "title": "Success",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "structuredContent", "isError", "_meta"],
+      "properties": {
+        "content": { "type": "array", "items": { "$ref": "#/$defs/contentItem" } },
+        "structuredContent": {
+          "type": "object",
+          "description": "The tool's own result shape; varies per capability and is not further specified generically by protocol.md.",
+          "additionalProperties": true
+        },
+        "isError": { "const": false },
+        "_meta": { "$ref": "#/$defs/meta" }
+      }
+    },
+    "errorResult": {
+      "title": "Policy or capability outcome",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["isError", "content", "structuredContent"],
+      "properties": {
+        "isError": { "const": true },
+        "content": { "type": "array", "items": { "$ref": "#/$defs/contentItem" } },
+        "structuredContent": { "$ref": "#/$defs/structuredError" },
+        "_meta": { "$ref": "#/$defs/meta" }
+      }
+    },
+    "actionClass": {
+      "type": "string",
+      "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"]
+    },
+    "structuredError": {
+      "oneOf": [
+        {
+          "title": "policy.denied",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": { "error": { "const": "policy.denied" } }
+        },
+        {
+          "title": "policy.approval_required",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error", "pending_action_id", "expires_at", "action_class"],
+          "properties": {
+            "error": { "const": "policy.approval_required" },
+            "pending_action_id": { "type": "string", "pattern": "^pa_" },
+            "expires_at": { "type": "integer", "minimum": 0 },
+            "action_class": { "$ref": "#/$defs/actionClass" }
+          }
+        },
+        {
+          "title": "policy.approval_timeout",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error", "pending_action_id"],
+          "description": "pending_action_id is inferred: protocol.md section 6 ties this outcome to a specific pending action that expired without resolution.",
+          "properties": {
+            "error": { "const": "policy.approval_timeout" },
+            "pending_action_id": { "type": "string", "pattern": "^pa_" }
+          }
+        },
+        {
+          "title": "policy.rate_limited",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error", "retry_after_ms"],
+          "properties": {
+            "error": { "const": "policy.rate_limited" },
+            "retry_after_ms": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "title": "policy.observe_only",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": { "error": { "const": "policy.observe_only" } }
+        },
+        {
+          "title": "policy.emergency_stop",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": { "error": { "const": "policy.emergency_stop" } }
+        },
+        {
+          "title": "permission.missing",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error", "permissions"],
+          "properties": {
+            "error": { "const": "permission.missing" },
+            "permissions": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Android runtime permissions the capability still needs, e.g. android.permission.SEND_SMS."
+            }
+          }
+        },
+        {
+          "title": "capability.unavailable",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error"],
+          "properties": { "error": { "const": "capability.unavailable" } }
+        },
+        {
+          "title": "capability.failed",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error", "detail"],
+          "properties": {
+            "error": { "const": "capability.failed" },
+            "detail": { "type": "string" }
+          }
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "content": [{ "type": "text", "text": "{\"ok\":true}" }],
+      "structuredContent": { "ok": true },
+      "isError": false,
+      "_meta": { "correlationId": "corr_0000000000000001", "auditId": 1234, "durationMs": 42 }
+    },
+    {
+      "isError": true,
+      "content": [{ "type": "text", "text": "approval required" }],
+      "structuredContent": {
+        "error": "policy.approval_required",
+        "pending_action_id": "pa_000000000001",
+        "expires_at": 1757140000000,
+        "action_class": "EXTERNAL_COMMITMENT"
+      }
+    },
+    {
+      "isError": true,
+      "content": [{ "type": "text", "text": "rate limited" }],
+      "structuredContent": { "error": "policy.rate_limited", "retry_after_ms": 15000 }
+    }
+  ]
+}

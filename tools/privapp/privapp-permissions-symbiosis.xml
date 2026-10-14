@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Privileged-permission allowlist for the Android Agent Harness runtime mounted as /system/priv-app.
+  MUST list every signature|privileged permission the app declares, or system_server crash-loops
+  on boot (recover with a Volume-Down safe-mode boot and remove the module).
+  Installed by the Magisk module at /data/adb/modules/symbiosis_privapp/system/etc/permissions/.
+  Update this file on the phone BEFORE installing a build that declares a new privileged permission.
+-->
+<permissions>
+    <privapp-permissions package="dev.symbiosis.runtime">
+        <permission name="android.permission.CAPTURE_AUDIO_OUTPUT"/>
+        <permission name="android.permission.CONTROL_INCALL_EXPERIENCE"/>
+        <permission name="android.permission.PACKAGE_USAGE_STATS"/>
+        <!-- Uplink injection: registering the AudioPolicy that renders at the TYPE_TELEPHONY sink. -->
+        <permission name="android.permission.MODIFY_AUDIO_ROUTING"/>
+        <!-- Uplink injection on Qualcomm HALs: the INCALL_MUSIC output only opens for this permission. -->
+        <permission name="android.permission.MODIFY_PHONE_STATE"/>
+    </privapp-permissions>
+</permissions>

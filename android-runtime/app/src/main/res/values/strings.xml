@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Android Agent Harness</string>
+    <string name="notification_listener_label">Android Agent Harness notification events</string>
+    <string name="channel_runtime">Android Agent Harness runtime</string>
+    <string name="channel_approvals">Android Agent Harness approvals</string>
+</resources>

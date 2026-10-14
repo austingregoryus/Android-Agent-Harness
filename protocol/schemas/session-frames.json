@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/session-frames.json",
+  "title": "SessionFrame",
+  "description": "Frames on GET /ws/sessions/{session_id}?since_seq=N (docs/protocol.md section 5.1). Every frame, JSON or binary, carries session_id, seq (monotonic per session, assigned by the runtime, incremented for EVERY frame including binary audio), ts, and correlation_id. This file covers the JSON text frames: type is one of session.state, session.summary, transcript.partial, transcript.final, agent.tool_request, agent.tool_result, dtmf.sent, user.interrupt, policy.approval_required, gap, error. On reconnect with since_seq the runtime replays persisted frames (session.state, transcript.*, agent.*, session.summary) with seq > since_seq; audio frames are never replayed and a gap is sent instead. session_messages persists every non-audio frame.\n\nBinary frames (reserved, not emitted in v0) are NOT JSON: they are a 16-byte fixed header followed by a raw payload, wire-compatible bytes, described by $defs/binaryHeader below with byte offsets:\n  bytes 0-3   (u32, big-endian assumed) magic = 0x53594D42 (ASCII \"SYMB\")\n  bytes 4-11  (u64) seq\n  bytes 12-13 (u16) type   -- 1 = audio.input.chunk (phone -> agent), 2 = audio.output.chunk (agent -> phone)\n  bytes 14-15 (u16) codec  -- 1 = PCM16 mono 16 kHz\n  bytes 16..  raw codec payload (length implied by the WebSocket frame length minus the 16-byte header)\nFor several JSON frame types (session.summary, transcript.partial, transcript.final, agent.tool_request, agent.tool_result, dtmf.sent, user.interrupt) protocol.md v0 names the type but does not enumerate its payload fields beyond the common envelope; those branches below are intentionally left open (additionalProperties: true) with a note, rather than inventing a closed shape the spec does not state.",
+  "type": "object",
+  "required": ["session_id", "seq", "ts", "correlation_id", "type"],
+  "oneOf": [
+    {
+      "title": "session.state",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "seq", "ts", "correlation_id", "type", "state", "previous_state"],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/sessionId" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "ts": { "$ref": "#/$defs/ts" },
+        "correlation_id": { "$ref": "#/$defs/correlationId" },
+        "type": { "const": "session.state" },
+        "state": { "$ref": "#/$defs/sessionState" },
+        "previous_state": { "$ref": "#/$defs/sessionState" }
+      }
+    },
+    {
+      "title": "session.summary",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["session_id", "seq", "ts", "correlation_id", "type"],
+      "description": "Payload fields beyond the common envelope are not specified in protocol.md v0.",
+      "properties": {
+        "session_id": { "$ref": "#/$defs/sessionId" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "ts": { "$ref": "#/$defs/ts" },
+        "correlation_id": { "$ref": "#/$defs/correlationId" },
+        "type": { "const": "session.summary" }
+      }
+    },
+    {
+      "title": "transcript.partial",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["session_id", "seq", "ts", "correlation_id", "type"],
+      "description": "Payload fields beyond the common envelope are not specified in protocol.md v0.",
+      "properties": {
+        "session_id": { "$ref": "#/$defs/sessionId" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "ts": { "$ref": "#/$defs/ts" },
+        "correlation_id": { "$ref": "#/$defs/correlationId" },
+        "type": { "const": "transcript.partial" }
+      }
+    },
+    {
+      "title": "transcript.final",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["session_id", "seq", "ts", "correlation_id", "type"],
+      "description": "Payload fields beyond the common envelope are not specified in protocol.md v0.",
+      "properties": {
+        "session_id": { "$ref": "#/$defs/sessionId" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "ts": { "$ref": "#/$defs/ts" },
+        "correlation_id": { "$ref": "#/$defs/correlationId" },
+        "type": { "const": "transcript.final" }
+      }
+    },
+    {
+      "title": "agent.tool_request",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["session_id", "seq", "ts", "correlation_id", "type"],
+      "description": "Payload fields beyond the common envelope are not specified in protocol.md v0.",
+      "properties": {
+        "session_id": { "$ref": "#/$defs/sessionId" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "ts": { "$ref": "#/$defs/ts" },
+        "correlation_id": { "$ref": "#/$defs/correlationId" },
+        "type": { "const": "agent.tool_request" }
+      }
+    },
+    {
+      "title": "agent.tool_result",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["session_id", "seq", "ts", "correlation_id", "type"],
+      "description": "Payload fields beyond the common envelope are not specified in protocol.md v0.",
+      "properties": {
+        "session_id": { "$ref": "#/$defs/sessionId" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "ts": { "$ref": "#/$defs/ts" },
+        "correlation_id": { "$ref": "#/$defs/correlationId" },
+        "type": { "const": "agent.tool_result" }
+      }
+    },
+    {
+      "title": "dtmf.sent",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["session_id", "seq", "ts", "correlation_id", "type"],
+      "description": "Payload fields beyond the common envelope are not specified in protocol.md v0.",
+      "properties": {
+        "session_id": { "$ref": "#/$defs/sessionId" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "ts": { "$ref": "#/$defs/ts" },
+        "correlation_id": { "$ref": "#/$defs/correlationId" },
+        "type": { "const": "dtmf.sent" }
+      }
+    },
+    {
+      "title": "user.interrupt",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["session_id", "seq", "ts", "correlation_id", "type"],
+      "description": "Payload fields beyond the common envelope are not specified in protocol.md v0.",
+      "properties": {
+        "session_id": { "$ref": "#/$defs/sessionId" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "ts": { "$ref": "#/$defs/ts" },
+        "correlation_id": { "$ref": "#/$defs/correlationId" },
+        "type": { "const": "user.interrupt" }
+      }
+    },
+    {
+      "title": "policy.approval_required",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "seq", "ts", "correlation_id", "type", "pending_action_id", "capability", "action_class", "expires_at"],
+      "description": "Same shape as the section 4.1 event topic of the same name, mirrored into this session (protocol.md does not restate the fields but the naming is shared by design).",
+      "properties": {
+        "session_id": { "$ref": "#/$defs/sessionId" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "ts": { "$ref": "#/$defs/ts" },
+        "correlation_id": { "$ref": "#/$defs/correlationId" },
+        "type": { "const": "policy.approval_required" },
+        "pending_action_id": { "type": "string", "pattern": "^pa_" },
+        "capability": { "type": "string" },
+        "action_class": { "$ref": "event.json#/$defs/actionClass" },
+        "expires_at": { "type": "integer", "minimum": 0 }
+      }
+    },
+    {
+      "title": "gap",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "seq", "ts", "correlation_id", "type", "from_seq", "to_seq"],
+      "description": "Inferred by analogy to the /ws/events gap frame (section 4.3), adapted to this channel's seq-based (rather than event id-based) numbering; protocol.md section 5.1 names this frame type without restating its fields.",
+      "properties": {
+        "session_id": { "$ref": "#/$defs/sessionId" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "ts": { "$ref": "#/$defs/ts" },
+        "correlation_id": { "$ref": "#/$defs/correlationId" },
+        "type": { "const": "gap" },
+        "from_seq": { "type": "integer", "minimum": 0 },
+        "to_seq": { "type": "integer", "minimum": 0 }
+      }
+    },
+    {
+      "title": "error",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "seq", "ts", "correlation_id", "type", "code", "message"],
+      "description": "Inferred by analogy to the /ws/events error frame (section 4.3); protocol.md section 5.1 names this frame type without restating its fields.",
+      "properties": {
+        "session_id": { "$ref": "#/$defs/sessionId" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "ts": { "$ref": "#/$defs/ts" },
+        "correlation_id": { "$ref": "#/$defs/correlationId" },
+        "type": { "const": "error" },
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "ref": { "type": "string" }
+      }
+    }
+  ],
+  "$defs": {
+    "sessionId": { "type": "string", "description": "e.g. sess_<hex>." },
+    "seq": { "type": "integer", "minimum": 0, "description": "Monotonic per session, assigned by the runtime, incremented for every frame including binary audio." },
+    "ts": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds." },
+    "correlationId": { "type": ["string", "null"], "pattern": "^corr_" },
+    "sessionState": {
+      "type": "string",
+      "enum": [
+        "CREATED", "DIALING", "RINGING", "CONNECTED", "ACTIVE", "HOLDING", "ENDING", "ENDED",
+        "BUSY", "NO_ANSWER", "FAILED", "CANCELLED", "PERMISSION_DENIED"
+      ],
+      "description": "The section 5 state machine: CREATED -> DIALING -> RINGING -> CONNECTED -> ACTIVE <-> HOLDING -> ENDING -> ENDED, with terminal failures BUSY, NO_ANSWER, FAILED, CANCELLED, PERMISSION_DENIED."
+    },
+    "binaryHeader": {
+      "type": "object",
+      "description": "Not a JSON frame. Documents the 16-byte binary header (docs/protocol.md section 5.1) that precedes every binary audio frame's payload. Field order and byte offsets are fixed wire layout, not JSON key order.",
+      "additionalProperties": false,
+      "required": ["magic", "seq", "type", "codec"],
+      "properties": {
+        "magic": {
+          "type": "integer",
+          "const": 1396920898,
+          "description": "u32 at byte offset 0, length 4. 0x53594D42, ASCII \"SYMB\"."
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "u64 at byte offset 4, length 8. Same seq space as JSON frames on this session."
+        },
+        "type": {
+          "type": "integer",
+          "enum": [1, 2],
+          "description": "u16 at byte offset 12, length 2. 1 = audio.input.chunk (phone -> agent), 2 = audio.output.chunk (agent -> phone)."
+        },
+        "codec": {
+          "type": "integer",
+          "enum": [1],
+          "description": "u16 at byte offset 14, length 2. 1 = PCM16 mono 16 kHz. Header ends at byte offset 16; the raw codec payload follows immediately."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "session_id": "sess_0123456789ab",
+      "seq": 4,
+      "ts": 1757139000500,
+      "correlation_id": "corr_0000000000000001",
+      "type": "session.state",
+      "state": "RINGING",
+      "previous_state": "DIALING"
+    },
+    {
+      "session_id": "sess_0123456789ab",
+      "seq": 5,
+      "ts": 1757139000600,
+      "correlation_id": "corr_0000000000000001",
+      "type": "policy.approval_required",
+      "pending_action_id": "pa_000000000002",
+      "capability": "telephony.place_call",
+      "action_class": "EXTERNAL_COMMITMENT",
+      "expires_at": 1757140000000
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/subscription.json",
+  "title": "Subscription",
+  "description": "A persisted subscription record (docs/protocol.md section 4.2). Subscriptions are owned by a peer and survive runtime restarts; a peer sees only its own. The same lifecycle is exposed both as /ws/events frames and as MCP tools (events.subscribe, events.unsubscribe, events.list_subscriptions, events.replay, events.ack).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "subscription_id",
+    "peer_id",
+    "topic_glob",
+    "filter",
+    "delivery",
+    "created_at",
+    "created_at_event_id",
+    "expires_at",
+    "ack_cursor"
+  ],
+  "properties": {
+    "subscription_id": {
+      "type": "string",
+      "pattern": "^sub_[0-9a-f]{12}$"
+    },
+    "peer_id": {
+      "type": "string",
+      "pattern": "^peer_[0-9a-f]{12}$"
+    },
+    "topic_glob": {
+      "type": "string",
+      "description": "Glob over event topics, e.g. messaging.*, call.*, *. Same wildcard grammar as scopes (section 2)."
+    },
+    "filter": {
+      "type": "array",
+      "description": "Conjunctive list of clauses applied to top-level payload keys.",
+      "items": { "$ref": "#/$defs/filterClause" }
+    },
+    "delivery": {
+      "type": "string",
+      "enum": ["live", "queue"]
+    },
+    "created_at": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch milliseconds."
+    },
+    "created_at_event_id": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Replay can never reach behind this journal id."
+    },
+    "expires_at": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "ack_cursor": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Highest event id the peer has cumulatively acknowledged."
+    }
+  },
+  "$defs": {
+    "filterClause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "op", "value"],
+      "properties": {
+        "field": {
+          "type": "string",
+          "description": "A top-level payload key."
+        },
+        "op": {
+          "type": "string",
+          "enum": ["eq", "ne", "lt", "lte", "gt", "gte", "contains", "prefix"]
+        },
+        "value": {
+          "description": "Comparison operand; type depends on the referenced field.",
+          "type": ["string", "number", "boolean", "null"]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "subscription_id": "sub_0123456789ab",
+      "peer_id": "peer_0123456789ab",
+      "topic_glob": "messaging.*",
+      "filter": [{ "field": "from", "op": "eq", "value": "+15550001234" }],
+      "delivery": "live",
+      "created_at": 1757139000000,
+      "created_at_event_id": 4700,
+      "expires_at": null,
+      "ack_cursor": 4711
+    }
+  ]
+}

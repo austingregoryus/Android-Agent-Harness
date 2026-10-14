@@ -1,0 +1,8 @@
+* text=auto
+*.sh text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+*.onnx binary
+*.pcm binary
+*.f32 binary
+*.jar binary

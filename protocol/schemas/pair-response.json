@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/pair-response.json",
+  "title": "PairResponse",
+  "description": "200 response body from POST /pair (docs/protocol.md section 2). token is shown once here and never retrievable again; the phone stores only sha256(token) in the resulting trusted_peers row (see trusted-peer.json).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["peer_id", "token", "scopes", "max_action_class", "expires_at"],
+  "properties": {
+    "peer_id": {
+      "type": "string",
+      "pattern": "^peer_[0-9a-f]{12}$"
+    },
+    "token": {
+      "type": "string",
+      "description": "Random 32-byte value, base64url-encoded. Shown once; not recoverable afterward."
+    },
+    "scopes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Effective scopes after clamping to what the pairing code was minted for."
+    },
+    "max_action_class": {
+      "type": "string",
+      "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"],
+      "description": "Effective ceiling after clamping."
+    },
+    "expires_at": {
+      "type": ["integer", "null"],
+      "description": "Epoch milliseconds, or null for a non-expiring peer token."
+    }
+  },
+  "examples": [
+    {
+      "peer_id": "peer_0123456789ab",
+      "token": "shown-once-base64url-token",
+      "scopes": ["messaging.*", "telephony.*", "device.*", "events.*", "contacts.*", "notifications.*"],
+      "max_action_class": "COMMUNICATION",
+      "expires_at": null
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+# Android / Gradle
+android-runtime/.gradle/
+android-runtime/.kotlin/
+android-runtime/build/
+android-runtime/app/build/
+android-runtime/local.properties
+android-runtime/.idea/
+*.iml
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Go
+gateway/bin/
+gateway/*.db
+gateway/dist/
+
+# Session memory / scratch
+.remember/
+tmp/
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.secret
+gateway/config.local.yaml
+
+# Python
+__pycache__/
+*.pyc
+
+# Pairing tokens, TLS pins — never commit
+secrets/
+
+# Conversation driver call logs
+logs/
+.kt/
+
+# Private development history and publication staging
+.playwright-mcp/
+private-notes/
+publication/
+.venv/
+.pytest_cache/
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.db
+*.db-shm
+*.db-wal
+*.sqlite*
+*.hprof
+*.zip
+*.tar.gz
+gateway/gateway
+gateway/gateway.exe
+gateway/config.yaml
+gateway/secrets/
+.mcp.json
+.idea/
+.vscode/

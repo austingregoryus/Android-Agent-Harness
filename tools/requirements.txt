@@ -1,0 +1,4 @@
+# Core event transport (sync client additional_headers support).
+websockets>=14,<16
+# Optional audio resampling support.
+numpy>=1.26,<3

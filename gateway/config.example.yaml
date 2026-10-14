@@ -1,0 +1,76 @@
+# Android Agent Harness Agent Gateway — example configuration.
+#
+# Secrets never live in this file. The phone bearer token comes from the
+# environment variable named by device.token_env, or from the file named by
+# device.token_file (which is what `gateway pair` writes). Provider API keys come
+# from the environment variables named by providers[].api_key_env.
+#
+# Relative paths (token_file, sqlite_path) are resolved against this file's
+# directory.
+
+device:
+  # The phone runtime. Default bind is loopback, so reach it through
+  #   adb forward tcp:18765 tcp:8765
+  # For LAN use https://PHONE_HOST:8766 and set tls_fingerprint from the phone UI.
+  base_url: http://127.0.0.1:18765
+  token_env: SYMBIOSIS_DEVICE_TOKEN
+  token_file: secrets/device-token
+
+providers:
+  - name: claude
+    kind: anthropic
+    model: claude-sonnet-5
+    api_key_env: ANTHROPIC_API_KEY
+    # Response cap. The Anthropic default is 8192: an extended-thinking turn
+    # spends part of the budget on thinking blocks, and a cap that truncates a
+    # tool_use block mid-arguments fails the whole task.
+    max_tokens: 8192
+    # "adaptive" (default) or "disabled". With adaptive thinking the model emits
+    # thinking blocks that the gateway must replay verbatim on the next turn; it
+    # carries them as opaque, provider-bound transcript parts, so a failover to
+    # another provider drops them rather than leaking them.
+    thinking: adaptive
+
+  - name: gpt
+    kind: openai
+    model: gpt-4o
+    api_key_env: OPENAI_API_KEY
+
+  - name: gemini
+    kind: gemini
+    model: gemini-2.5-flash
+    api_key_env: GEMINI_API_KEY
+
+  # Any OpenAI-compatible local server: Ollama, LM Studio, vLLM.
+  # base_url makes api_key_env optional for keyless servers.
+  - name: local
+    kind: openai
+    model: qwen3:14b
+    api_key_env: OLLAMA_API_KEY
+    # A base_url with no path gets "/v1" appended, so bare host:port works too.
+    base_url: http://127.0.0.1:11434/v1
+
+  # Deterministic scripted provider. Useful to exercise the phone path with no
+  # model credentials at all.
+  - name: offline
+    kind: fake
+
+# Providers are tried in this order. A provider switch happens only at a turn
+# boundary, never while a tool call is in flight.
+failover:
+  - claude
+  - gpt
+  - local
+
+agent:
+  max_turns: 12
+  # Optional. Capability globs, same grammar as the protocol's peer scopes.
+  # Omit to expose every tool the phone's token is scoped for.
+  tool_allowlist:
+    - "device.get_*"
+    - "messaging.*"
+    - "events.*"
+  correlation_prefix: corr_
+
+storage:
+  sqlite_path: gateway.db
