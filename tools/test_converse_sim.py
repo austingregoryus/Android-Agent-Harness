@@ -736,7 +736,7 @@ def scenario_idle_nudge():
 def scenario_outcome_parsing():
     """
     The structured result a calling agent reads. The model is mocked: what is under test is the parsing and
-    the guarantees around it, not the brain's judgment (that is measured by hand in docs/brain-options.md).
+    the guarantees around it, not the brain's judgment (that is measured by hand with tools/judgement_eval.py).
 
     Every reply below is one a real model has actually produced: a fenced block, prose around the object, an
     outcome word that is not in the enum, a half-filled object, and a hard failure.

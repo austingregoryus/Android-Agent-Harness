@@ -1,8 +1,8 @@
 # Automation: batches, saved workflows, triggers, ai.ask
 
 The phone can run sequences of its own tools without a round trip per step, save them under a name, and run
-them by itself when an event arrives or on a schedule — Tasker-style — optionally asking the owner's LAN model
-what to do. Code: `android-runtime/.../automation/`. Wire contract: `docs/protocol.md` §6.1–6.3.
+them by itself when an event arrives or on a schedule — Tasker-style — optionally asking a configured
+OpenAI-compatible model what to do. Code: `android-runtime/.../automation/`. Wire contract: `docs/protocol.md` §6.1–6.3.
 
 ## Concepts
 
@@ -30,7 +30,7 @@ approval gate; individual steps still use current phone policy, including any ap
 | `automation.delete` | Delete one (the audit log keeps what its runs did). |
 | `automation.enable` | `{name, enabled}`: turn its trigger on/off. |
 | `automation.run_saved` | `{name, input?}`: run now and wait for the report. |
-| `ai.ask` | `{prompt, system?, model?, max_tokens?, json?}` → `{text}` or `{json}` from the LAN LLM router. |
+| `ai.ask` | `{prompt, system?, model?, max_tokens?, json?}` → `{text}` or `{json}` from the configured OpenAI-compatible endpoint. |
 | `notifications.post` | `{title, text, urgent?}`: show the owner a notification. |
 
 Names are unique per owner (two agents can both have a `status`). A peer sees and manages only its own workflows;
@@ -112,7 +112,7 @@ The request includes `messages`, `stream:false`, `max_tokens` and `reasoning_eff
 With `json: true` the model is
 told to answer with one JSON object, `response_format: json_object` is sent, and the reply is parsed (code
 fences and surrounding prose are tolerated) into `result.json`; otherwise `result.text`. 60 s timeout. Errors:
-`ai.unreachable`, `ai.timeout`, `ai.http_error`, `ai.empty`, `ai.bad_json`.
+`ai.unreachable`, `ai.timeout`, `ai.http_error`, `ai.bad_response`, `ai.empty`, `ai.bad_json`.
 
 The address and model live in persisted policy (`PolicyConfig.ai`: `baseUrl`, `model`, `timeoutMs`) with defaults
 in `policy/PolicyModel.kt`. There is no UI editor for them. See [configuration](development.md). Cleartext is
@@ -213,5 +213,5 @@ automation.save {
 
 Tools used: `ai.ask`, `notifications.post` (added for this), `messaging.send_sms`. Needs scopes `ai.*`,
 `notifications.*`, `messaging.*`. The forwarded SMS does not re-trigger the workflow (it is outgoing; and its
-events carry the run's correlation id). Note the message text goes to the LAN router — that is the point of the
+events carry the run's correlation id). Note the message text goes to the `ai.ask` endpoint — that is the point of the
 workflow, and the reason `ai.ask` is an action class rather than a read.

@@ -24,11 +24,14 @@
     "meta": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["correlationId", "auditId", "durationMs"],
+      "required": ["correlationId"],
+      "description": "Fresh results carry correlationId, durationMs and auditId; idempotent replays carry correlationId, replayed and idempotencyKey.",
       "properties": {
         "correlationId": { "type": "string", "pattern": "^corr_" },
-        "auditId": { "type": "integer", "minimum": 1 },
-        "durationMs": { "type": "integer", "minimum": 0 }
+        "auditId": { "type": ["integer", "null"], "minimum": 1 },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "replayed": { "type": "boolean", "description": "Present on an idempotent replay of an earlier result (protocol.md section 3)." },
+        "idempotencyKey": { "type": ["string", "null"], "description": "Present on an idempotent replay." }
       }
     },
     "success": {
@@ -61,7 +64,7 @@
     },
     "actionClass": {
       "type": "string",
-      "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"]
+      "enum": ["READ_ONLY", "AUTOMATION", "SENSITIVE_READ", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"]
     },
     "structuredError": {
       "oneOf": [
@@ -70,7 +73,10 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["error"],
-          "properties": { "error": { "const": "policy.denied" } }
+          "properties": {
+            "error": { "const": "policy.denied" },
+            "detail": { "type": ["string", "null"], "description": "Human-readable explanation; always present, possibly null." }
+          }
         },
         {
           "title": "policy.approval_required",
@@ -79,6 +85,7 @@
           "required": ["error", "pending_action_id", "expires_at", "action_class"],
           "properties": {
             "error": { "const": "policy.approval_required" },
+            "detail": { "type": ["string", "null"], "description": "Human-readable explanation; always present, possibly null." },
             "pending_action_id": { "type": "string", "pattern": "^pa_" },
             "expires_at": { "type": "integer", "minimum": 0 },
             "action_class": { "$ref": "#/$defs/actionClass" }
@@ -92,6 +99,7 @@
           "description": "pending_action_id is inferred: protocol.md section 6 ties this outcome to a specific pending action that expired without resolution.",
           "properties": {
             "error": { "const": "policy.approval_timeout" },
+            "detail": { "type": ["string", "null"], "description": "Human-readable explanation; always present, possibly null." },
             "pending_action_id": { "type": "string", "pattern": "^pa_" }
           }
         },
@@ -102,7 +110,10 @@
           "required": ["error", "retry_after_ms"],
           "properties": {
             "error": { "const": "policy.rate_limited" },
-            "retry_after_ms": { "type": "integer", "minimum": 0 }
+            "detail": { "type": ["string", "null"], "description": "Human-readable explanation; always present, possibly null." },
+            "retry_after_ms": { "type": "integer", "minimum": 0 },
+            "hour_used": { "type": "integer", "minimum": 0 },
+            "day_used": { "type": "integer", "minimum": 0 }
           }
         },
         {
@@ -110,14 +121,20 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["error"],
-          "properties": { "error": { "const": "policy.observe_only" } }
+          "properties": {
+            "error": { "const": "policy.observe_only" },
+            "detail": { "type": ["string", "null"], "description": "Human-readable explanation; always present, possibly null." }
+          }
         },
         {
           "title": "policy.emergency_stop",
           "type": "object",
           "additionalProperties": false,
           "required": ["error"],
-          "properties": { "error": { "const": "policy.emergency_stop" } }
+          "properties": {
+            "error": { "const": "policy.emergency_stop" },
+            "detail": { "type": ["string", "null"], "description": "Human-readable explanation; always present, possibly null." }
+          }
         },
         {
           "title": "permission.missing",
@@ -126,6 +143,7 @@
           "required": ["error", "permissions"],
           "properties": {
             "error": { "const": "permission.missing" },
+            "detail": { "type": ["string", "null"], "description": "Human-readable explanation; always present, possibly null." },
             "permissions": {
               "type": "array",
               "items": { "type": "string" },
@@ -139,7 +157,10 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["error"],
-          "properties": { "error": { "const": "capability.unavailable" } }
+          "properties": {
+            "error": { "const": "capability.unavailable" },
+            "detail": { "type": ["string", "null"], "description": "Human-readable explanation; always present, possibly null." }
+          }
         },
         {
           "title": "capability.failed",
@@ -148,6 +169,7 @@
           "required": ["error", "detail"],
           "properties": {
             "error": { "const": "capability.failed" },
+            "detail": { "type": ["string", "null"], "description": "Human-readable explanation; always present, possibly null." },
             "detail": { "type": "string" }
           }
         }

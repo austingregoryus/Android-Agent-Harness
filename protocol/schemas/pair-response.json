@@ -22,13 +22,19 @@
     },
     "max_action_class": {
       "type": "string",
-      "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"],
+      "enum": ["READ_ONLY", "AUTOMATION", "SENSITIVE_READ", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"],
       "description": "Effective ceiling after clamping."
     },
     "expires_at": {
       "type": ["integer", "null"],
       "description": "Epoch milliseconds, or null for a non-expiring peer token."
-    }
+    },
+    "device_id": { "type": "string", "pattern": "^dev_" },
+    "mcp_url": { "type": "string", "description": "MCP endpoint on the listener that served the pairing." },
+    "events_url": { "type": "string", "description": "Event WebSocket on the listener that served the pairing." },
+    "tls_mcp_url": { "type": "string", "description": "Present only when LAN TLS is enabled; the host is a placeholder." },
+    "tls_events_url": { "type": "string", "description": "Present only when LAN TLS is enabled; the host is a placeholder." },
+    "tls_fingerprint_sha256": { "type": "string", "description": "Present only when LAN TLS is enabled. Compare with the phone UI before trusting it." }
   },
   "examples": [
     {

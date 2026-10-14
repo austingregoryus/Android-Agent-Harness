@@ -32,7 +32,7 @@ object NativeCapabilities {
         Param("driver_managed", "boolean", "Cancel approval when the caller stops waiting; end the call if conversation mode does not start within 90 seconds (default false)"),
         Param("audio_route", "string", "earpiece (default) or speaker", enum = listOf("earpiece", "speaker")),
       ),
-      // An outbound call commits the user to the world: EXTERNAL_COMMITMENT, unattended by default (docs/security.md §2.3a) — rate limits and the denylist are the brakes, not an approval tap.
+      // An outbound call commits the user to the world: EXTERNAL_COMMITMENT, unattended by default (docs/security.md#configure-the-defaults-deliberately) — rate limits and the denylist are the brakes, not an approval tap.
       actionClass = ActionClass.EXTERNAL_COMMITMENT, rateClass = RateClass.CALL,
       requiredPermissions = listOf("android.permission.CALL_PHONE", "android.permission.READ_PHONE_STATE"),
       emitsEvents = listOf(Topics.SESSION_STATE, Topics.CALL_CONNECTED, Topics.CALL_ENDED),

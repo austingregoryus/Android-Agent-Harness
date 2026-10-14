@@ -28,6 +28,7 @@ Audit/event databases, gateway SQLite and Python logs are private runtime data. 
 - Audit hashing cannot withstand an attacker who controls both the database and chain seed.
 - SecureStore refuses identity replacement after prior encrypted use, but a device where encryption never worked can use private plaintext preferences. Check storage status in the app.
 - SMS sender IDs can be spoofed. The inbound allowlist is a routing filter, and the optional passphrase crosses the carrier in plaintext.
+- Screen control (`ui.*`, `notifications.invoke_action`) is an accepted gap: it can operate any app, including messaging apps and this app's own controls, and is charged one `mutation` slot per action rather than the SMS/call rate classes or contact lists. Grant it only to peers you would trust with the unlocked phone.
 - Transport failure does not prove an action failed. Preserve ambiguous outcomes; do not blindly repeat effects.
 - Audio, accessibility and background service behavior depend on firmware, permissions and Android restrictions. Unit tests do not qualify physical behavior.
 

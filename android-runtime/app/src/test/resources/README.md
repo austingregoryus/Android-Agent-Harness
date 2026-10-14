@@ -16,7 +16,7 @@ PCM and metadata are also copied to `src/main/assets` for the optional device se
 From the repository root, with Python 3.11 or later and the pinned dependencies installed in a
 temporary virtual environment:
 
-```powershell
+```sh
 python -m pip install -r tools/turn-fixture-requirements.txt
 python tools/generate_turn_fixture.py
 python tools/generate_turn_fixture.py --check

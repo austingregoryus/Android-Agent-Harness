@@ -136,10 +136,17 @@ class TurnDetectorTest {
   }
 
   @Test
-  fun `short input is padded at the front and silence is not a finished turn`() {
+  fun `short input is padded at the front and only len samples count`() {
+    // Smart Turn v3.2 scores pure digital silence as a finished turn (p~0.99, same under the Python
+    // onnxruntime), so silence is no test of padding. CallConversation only asks after the VAD has heard speech.
     detectorOrSkip().use { det ->
-      val p = det.probability(ShortArray(16_000)) // one second of digital silence
-      assertTrue("silence should not read as a completed turn (p=$p)", p < 0.5f)
+      val pcm = goldenPcm()
+      val tail = pcm.copyOfRange(pcm.size - 48_000, pcm.size) // the last 3 s carry the generated signal
+      val padded = ShortArray(TurnDetector.WINDOW_SAMPLES).also { tail.copyInto(it, TurnDetector.WINDOW_SAMPLES - tail.size) }
+      val want = det.probability(padded)
+      assertEquals("short input must equal an explicitly front-padded window", want, det.probability(tail), 1e-4f)
+      val withTrailing = tail + ShortArray(8_000) { 12_000 }
+      assertEquals("samples after len must be ignored", want, det.probability(withTrailing, tail.size), 1e-4f)
     }
   }
 }

@@ -22,7 +22,7 @@ What makes it feel like a conversation rather than a form being read aloud (docs
   * digits in the transcript become words before the model sees them ("720" -> "seven twenty");
   * it can never hang up on "No", and once it has decided to hang up it stops answering.
 
-Borrowed from the production voice-agent stacks (docs/conversation-borrow.md, docs/conversation-review-2026-09-07.md):
+Borrowed from the production voice-agent stacks:
   * the reply starts on the INTERIM transcript and is kept if the final reads the same (preemptive generation);
   * on an interruption the history keeps only the words that were heard, the rest is parked, and a false
     interruption (a cough, an "uh-huh") resumes it instead of losing it; a "Yes" over the tail of our question
@@ -3335,7 +3335,7 @@ def main() -> None:
     ap.add_argument("--local-model", default=LOCAL_DEFAULT_MODEL,
                     help="model on --local-base. The router's resident 'fast' lane answers in ~0.5 s and is free, "
                          "but needs SMALL_MODEL_RULES (applied automatically) to write numbers as words and to "
-                         "call hang_up on a goodbye; see docs/brain-options.md")
+                         "call hang_up on a goodbye. Ignored unless --brain custom")
     ap.add_argument("--local-fallback", default="", help="model on --local-base to re-ask when --local-model "
                     "stalls ('' = none; prefer --fallback-brain, which may be on another host)")
     ap.add_argument("--fallback-brain", choices=sorted(BRAINS) + ["none"], default="ornith",
@@ -3345,9 +3345,9 @@ def main() -> None:
     ap.add_argument("--first-token-timeout", type=float, default=2.5)
     ap.add_argument("--llm-api-key", default=None,
                     help="Bearer key for --local-base when it is a hosted OpenAI-compatible API (env LLM_API_KEY). "
-                         "E.g. --local-base https://api.openai.com/v1 --local-model gpt-5.6-luna --llm-reasoning none, "
+                         "Needs --brain custom, otherwise the preset replaces --local-*. E.g. --local-base https://api.openai.com/v1 --local-model gpt-5.6-luna --llm-reasoning none, "
                          "https://api.anthropic.com/v1 --local-model claude-sonnet-5 --llm-reasoning off, or "
-                         "https://api.cerebras.ai/v1 --local-model qwen-3.8-27b; see docs/brain-options.md. "
+                         "https://api.cerebras.ai/v1 --local-model qwen-3.8-27b; see docs/conversation-mode.md. "
                          "Default: env LLM_API_KEY, else the matching line in secrets/api_keys")
     ap.add_argument("--llm-reasoning", default="none",
                     help="reasoning_effort sent for non-'voice' models: 'none' for the router, 'low'/'minimal' for "

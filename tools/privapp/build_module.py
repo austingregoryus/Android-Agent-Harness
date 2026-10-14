@@ -5,7 +5,7 @@ Bundles a release APK, the privapp-permissions XML, and module.prop into the min
 Magisk module zip layout (module.prop + system/... + META-INF/com/google/android/{update-binary,updater-script}).
 Flash the resulting zip from the Magisk app ("Install from storage") or from custom recovery.
 
-See docs/adding-a-phone.md, section "Privileged install (rooted phones, needed for talking calls)".
+See docs/adding-a-phone.md, section "Privileged install".
 
 Usage:
     python tools/privapp/build_module.py --apk path/to/app-release.apk --out android-agent-harness-privapp.zip

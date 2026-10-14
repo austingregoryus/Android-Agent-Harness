@@ -12,10 +12,10 @@ report disagreements with the implementation rather than assuming a documented s
 | Event channel | `GET /ws/events` (WebSocket) | Subscriptions, live push, ack, replay. |
 | Session channel | `GET /ws/sessions/{session_id}` (WebSocket) | Long-lived sessions (calls). JSON frames + binary audio frames. |
 | Pairing | `POST /pair` | Exchange a one-time code for a scoped bearer token. |
-| Health | `GET /health` | Unauthenticated liveness: `{ "ok": true, "device_id": "...", "version": "..." }`. |
+| Health | `GET /health` | Unauthenticated liveness: `{ "ok": true, "device_id": "...", "version": "...", "protocol": "...", "tls_fingerprint_sha256": "..." }`. |
 
-Default bind: `127.0.0.1:8765`. Reaching the phone from a workstation goes through `adb reverse`/`adb forward`
-or an overlay network (Tailscale). Binding to a non-loopback interface is a user-visible toggle and requires TLS
+Default bind: `127.0.0.1:8765`. Reaching the phone from a workstation goes through `adb forward` (`adb reverse` covers the other direction, such
+as the phone reaching a workstation `ai.ask` endpoint) or an overlay network (Tailscale). Binding to a non-loopback interface is a user-visible toggle and requires TLS
 (self-signed, fingerprint pinned by the client). Plaintext on a LAN interface is never the default.
 
 ## 2. Authentication and scopes
@@ -29,7 +29,7 @@ Peer tokens are random 32-byte values, base64url. The phone stores only `sha256(
 peer_id            TEXT PRIMARY KEY     -- "peer_" + 12 hex
 label              TEXT                 -- human label ("homelab-gateway")
 token_sha256       TEXT UNIQUE
-scopes             TEXT                 -- JSON array of capability globs, e.g. ["messaging.*","device.get_*","events.*"]
+scopes_json        TEXT                 -- JSON array of capability globs, e.g. ["messaging.*","device.get_*","events.*"]
 max_action_class   TEXT                 -- ceiling: READ_ONLY | AUTOMATION | SENSITIVE_READ | LOW_RISK | COMMUNICATION | EXTERNAL_COMMITMENT | DEVICE_MUTATION | DESTRUCTIVE
 created_at, expires_at, revoked_at, last_seen_at   INTEGER (epoch ms, nullable)
 ```
@@ -49,15 +49,18 @@ Scopes `["*"]`, ceiling `DESTRUCTIVE`. Pairing-code issuance is a local UI opera
 ```
 POST /pair
 { "code": "K7Q2-9F4A", "label": "homelab-gateway", "scopes": ["messaging.*","telephony.*","device.*","events.*","contacts.*","notifications.*"], "max_action_class": "COMMUNICATION" }
-→ 200 { "peer_id": "peer_...", "token": "<shown once>", "scopes": [...], "max_action_class": "COMMUNICATION", "expires_at": null }
+→ 200 { "peer_id": "peer_...", "token": "<shown once>", "scopes": [...], "max_action_class": "COMMUNICATION", "expires_at": null,
+        "device_id": "...", "mcp_url": "...", "events_url": "..." }
 ```
 
+With LAN TLS enabled the response also carries `tls_mcp_url`, `tls_events_url` and `tls_fingerprint_sha256`.
+
 Requested scopes are clamped to what the code was minted for (the UI chooses when it mints). Revoking a peer closes
-its WebSockets and ends its sessions within one second.
+its WebSockets and ends its sessions asynchronously.
 
 ## 3. MCP Streamable HTTP
 
-Implements MCP protocol version `2025-06-18` (accepts `2025-03-26`). Rules the runtime follows:
+Implements MCP protocol version `2025-06-18` (accepts `2025-03-26` and `2024-11-05`). Rules the runtime follows:
 
 - `POST /mcp` body is a single JSON-RPC request, response, or notification. **Batch arrays are rejected** with
   HTTP 400 `{ "error": "batch not supported" }`. Clients on 2025-03-26 that batch will get a clear error.
@@ -86,7 +89,7 @@ Implements MCP protocol version `2025-06-18` (accepts `2025-03-26`). Rules the r
 |---|---|
 | `initialize` | `serverInfo.name = "android-agent-harness-runtime"`, capabilities: `tools`, `resources`. |
 | `ping` | `{}` |
-| `tools/list` | Scope-filtered. Each tool has `name` (dotted, e.g. `messaging.send_sms`), `description`, `inputSchema`, `annotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) and `_meta.symbiosis = { action_class, tier, rate_class, emits_events[] }`. |
+| `tools/list` | Scope-filtered. Each tool has `name` (dotted, e.g. `messaging.send_sms`), `description`, `inputSchema`, `annotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) and `_meta.symbiosis = { action_class, tier, rate_class, emits_events[], source, version }`. |
 | `tools/call` | See result envelope below. |
 | `resources/list` | `phone://device/status`, `phone://capabilities`, `phone://audit/recent`, `phone://audit/verify`, `phone://events/recent`, `phone://policy`, `phone://sessions`. |
 | `resources/read` | JSON text contents. |
@@ -154,7 +157,7 @@ There is exactly one journal per device; subscriptions are views over it.
 subscription_id        TEXT PRIMARY KEY  -- "sub_" + 12 hex
 peer_id                TEXT
 topic_glob             TEXT              -- "messaging.*", "call.*", "*"
-filter                 TEXT              -- JSON array of {field, op, value}; op ∈ eq, ne, lt, lte, gt, gte, contains, prefix; field is a top-level payload key
+filter_json            TEXT              -- JSON array of {field, op, value}; op ∈ eq, ne, lt, lte, gt, gte, contains, prefix; field is a top-level payload key
 delivery               TEXT              -- "live" | "queue"
 created_at             INTEGER
 created_at_event_id    INTEGER           -- replay can never reach behind this
@@ -199,7 +202,7 @@ Events are never dropped from the journal by backpressure. The client recovers w
 response sets `truncated: true` and `earliest_available_id` so the client knows events were evicted by retention.
 
 **Retention.** Journal keeps the newer of 10 000 events or 7 days; eviction runs hourly. `audit_entries` are
-never evicted by this rule.
+not evicted by this rule; they have their own retention (§7).
 
 **Socket binding.** Subscriptions belong to the peer, not to the socket that created them. On connect the runtime
 attaches every live subscription the peer owns to the new socket and sends `hello { peer_id, last_event_id,
@@ -255,24 +258,25 @@ for it without touching harmless reads. A peer whose ceiling is `READ_ONLY` cann
 
 Decision pipeline for every `tools/call`, evaluated in this order and short-circuiting:
 
+0. **Dispatch checks** before policy: lookup and scope / ceiling (peer) → hidden (`-32601`); argument validation →
+   `-32602`; idempotency replay of an earlier identical call (§3).
 1. **Emergency stop** on → `policy.emergency_stop` (nothing runs, live sessions are ended, WS clients get `bye`).
 2. **Observe-only** on and class > SENSITIVE_READ → `policy.observe_only`.
-3. **Scope / ceiling** (peer) → hidden (`-32601`).
-4. **Capability override** (per-tool rule in `policies`): `allow | deny | approve`.
-5. **Class default**: READ_ONLY, AUTOMATION, SENSITIVE_READ, LOW_RISK, COMMUNICATION,
+3. **Capability override** (per-tool rule in `policies`): `allow | deny | approve`.
+4. **Class default**: READ_ONLY, AUTOMATION, SENSITIVE_READ, LOW_RISK, COMMUNICATION,
    EXTERNAL_COMMITMENT and DEVICE_MUTATION allow; DESTRUCTIVE deny. `telephony.place_call` and
    `messaging.send_sms` are EXTERNAL_COMMITMENT and can run without a tap by default. The phone's
    **Ask me first** switch sets EXTERNAL_COMMITMENT and DEVICE_MUTATION to approve. Persisted configuration
    may differ from these code defaults; inspect the effective configuration before granting authority.
-6. **Contact lists** (COMMUNICATION and above with a `target`/`to` argument): denylist → deny; allowlist non-empty
+5. **Contact lists** (COMMUNICATION and above with a `target`/`to` argument): denylist → deny; allowlist non-empty
    and target absent → approve; **target on the allowlist → the user's standing approval**: an APPROVE that came
    from the class default becomes ALLOW (an explicit per-capability APPROVE override still asks).
-7. **Quiet hours** (COMMUNICATION and above): inside the window → approve.
-8. **Rate limits** (persisted sliding windows in `rate_counters`, keyed by rate class): defaults
-   `sms 20/hour, 100/day` · `call 5/hour, 20/day` · `install 3/day` · `mutation 300/hour, 2000/day` · `wake 6/hour` ·
+6. **Quiet hours** (COMMUNICATION and above): inside the window → approve.
+7. **Rate limits** (persisted sliding windows in `rate_counters`, keyed by rate class): defaults
+   `sms 20/hour, 100/day` · `call 5/hour, 20/day` · `install 3/day` · `mutation 300/hour, 2000/day` · `wake 6/hour, 24/day` ·
    `automation 240/hour, 2000/day` (batches, not their steps) · `ai 120/hour, 1000/day` (`ai.ask`). Exceeded → `policy.rate_limited`. A class default or rate
    limit missing from a saved config (it predates that class) falls back to the code default, not to approve/unlimited.
-9. Execute, with audit rows before (intent) and after (outcome).
+8. Execute, with audit rows before (intent) and after (outcome).
 
 `approve` creates a `pending_actions` row and a high-priority notification with Approve/Deny actions, then waits up
 to `approval_wait_ms` (default 20 s, max 120 s, set per call via `_meta.approvalWaitMs`). If resolved in time the
@@ -296,14 +300,14 @@ shape. The latter is not an MCP resource or the smaller `policy.approval_require
 
 ### 6.1 `automation.run` (batches)
 
-One tools/call that runs up to 25 other tool calls in order. It is the executor a later phase builds saved
-workflows and event triggers on, so the step format below is what those will store.
+One tools/call that runs up to 25 other tool calls in order. Saved workflows and event triggers (§6.3) store and
+run this same step format.
 
 ```json
 { "steps": [
     { "id": "who",  "tool": "contacts.search", "args": { "query": "Ann" } },
     { "id": "text", "tool": "messaging.send_sms",
-      "args": { "to": "{{steps.who.result.contacts.0.number}}", "text": "Running late, {{input.eta}}" },
+      "args": { "to": "{{steps.who.result.contacts.0.phones.0}}", "body": "Running late, {{input.eta}}" },
       "on_error": "stop", "wait_ms": 0 } ],
   "timeout_ms": 60000,
   "input": { "eta": "10 min" } }
@@ -315,7 +319,7 @@ workflows and event triggers on, so the step format below is what those will sto
 - **Limits:** 1-25 steps (more → `invalid_params`); `timeout_ms` default 60 000, clamped to 1 000..300 000, covers the
   whole batch including waits. The whole batch is validated before step 1 runs.
 - **Templates** (string values only, recursively; never keys, numbers or `tool`): `{{steps.<id>.result.<path>}}` reads an
-  earlier step's `structuredContent`; `{{steps.<id>.ok|error|ms}}` its status; `{{input.<name>.<path>}}` the `input`
+  earlier step's `structuredContent`; `{{steps.<id>.ok|error|ms|skipped}}` its status; `{{input.<name>.<path>}}` the `input`
   object. Array elements are `items.0.x` or `items[0].x`. A string that is exactly one reference keeps the value's JSON
   type (`"{{steps.a.result.count}}"` → `3`); otherwise values are text-substituted (non-strings as compact JSON). A
   missing reference — unknown or later step, a failed step's `result`, absent path, index out of range — fails that
@@ -339,7 +343,7 @@ workflows and event triggers on, so the step format below is what those will sto
   the tools/call argument check does.
 - **Class:** `automation.run` is `AUTOMATION` / rate class `automation` (see §6), scope `automation.*`.
 
-### 6.2 Tools added 2026-09-26
+### 6.2 Further tools
 
 | Tool | Class / rate | Notes |
 |---|---|---|
@@ -363,13 +367,13 @@ Added with saved workflows (same day, phase 2):
 | `automation.list`, `automation.get` | AUTOMATION | own workflows (admin: all) |
 | `automation.delete`, `automation.enable` | AUTOMATION / automation | |
 | `automation.run_saved` | AUTOMATION / automation | `{name, input?}`; returns §6.1's report plus `run_correlation_id` |
-| `ai.ask` | LOW_RISK / ai | `{prompt, system?, model?, max_tokens?, json?}` → `{text}` or `{json}`; LAN LLM router, scope `ai.*` |
+| `ai.ask` | LOW_RISK / ai | `{prompt, system?, model?, max_tokens?, json?}` → `{text}` or `{json}`; the configured OpenAI-compatible endpoint, scope `ai.*` |
 | `notifications.post` | LOW_RISK / mutation | `{title, text, urgent?}`: a notification to the owner |
 
 A step may also carry `if` (§6.3): a condition on references; false → the step is `skipped` and the batch goes on.
 
-The `ui.*` additions share `ui.tap_element`'s class, tier and rate class: one MUTATION slot per call. See
-`docs/security.md` §2.3a for the accepted gap that screen control shares.
+The `ui.*` additions share `ui.tap_element`'s class, tier and rate class: one MUTATION slot per call. Screen control
+shares the accepted limits described in [security limits](security.md#limits).
 
 ### 6.3 Saved workflows and triggers
 
@@ -400,8 +404,11 @@ notification can.
 
 ## 7. Audit
 
-`audit_entries` is append-only, enforced by SQLite triggers (`BEFORE UPDATE`/`BEFORE DELETE … RAISE(ABORT)`) and a
-hash chain:
+`audit_entries` is append-only apart from retention, enforced by SQLite triggers (`BEFORE UPDATE`/`BEFORE DELETE …
+RAISE(ABORT)`) and a hash chain. Retention runs hourly: it keeps rows from the last 30 days, at most 200 000 of them
+and never fewer than 1 000. Before deleting it records an append-only `audit_anchors` row (first kept id and its
+`prev_hash`) in the same transaction, so chain verification starts from the latest anchor, and the prune itself is
+recorded as an `audit.prune` entry. Deleting rows at or after the latest anchor is still refused by trigger.
 
 ```
 id INTEGER PK AUTOINCREMENT, ts, correlation_id, peer_id, kind ('tool.intent'|'tool.outcome'|'policy.decision'|'approval'|'event.emitted'|'session.transition'|'admin'|'workflow.run'),
@@ -417,7 +424,7 @@ identifiers must stay auditable.
 
 ## 8. Capability naming
 
-Runtime capabilities use dotted namespaces from the spec (`telephony.*`, `messaging.*`, `contacts.*`,
+Runtime capabilities use dotted namespaces (`telephony.*`, `messaging.*`, `contacts.*`,
 `notifications.*`, `apps.*`, `ui.*`, `media.*`, `device.*`, `location.*`, `sensors.*`, `files.*`, `calendar.*`,
 `connectivity.*`, `events.*`, `automation.*`, `ai.*`, `diagnostics.*`). Conversation mode lives under `telephony.*` (`converse`, `speak`, `stop_speaking`,
 `play_audio`, `turn_audio`); `camera.*` is reserved and not implemented (background capture is a product decision). MCP tool names are the capability names verbatim. Where a capability is a passthrough of a droid-mcp

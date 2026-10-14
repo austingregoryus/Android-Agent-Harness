@@ -29,7 +29,7 @@ bin/gateway mcp --config config.local.yaml
 bin/gateway run --config config.local.yaml "Read the battery level"
 ```
 
-Generate the code in the phone UI. `mcp` serves stdio for an MCP host; it must be launched by that host using absolute executable/config paths. Diagnostic output goes to stderr. The tool catalogue depends on the phone peer's scopes, ceiling and current device capabilities.
+Generate the code in the phone UI. Without `--scopes`/`--max-action-class`, `pair` requests `messaging.*`, `telephony.*`, `device.*`, `events.*`, `contacts.*` and `notifications.*` at the `COMMUNICATION` ceiling (clamped to what the code was minted for). For a first connection prefer the narrow read-only pairing in the [development guide](../docs/development.md#connect-over-usb). `mcp` serves stdio for an MCP host; it must be launched by that host using absolute executable/config paths. Diagnostic output goes to stderr. The tool catalogue depends on the phone peer's scopes, ceiling and current device capabilities.
 
 The gateway adds health, device-list and event-wait tools. To enable `gateway.converse_call`, configure `agent.converse_script` with the path to `tools/converse.py` (relative to the config file or absolute), and `agent.python` with the interpreter if needed. Python uses its own model/speech settings; gateway provider selection does not configure the call driver. See [spoken calls](../docs/conversation-mode.md).
 

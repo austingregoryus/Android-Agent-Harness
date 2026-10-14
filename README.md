@@ -46,10 +46,16 @@ Availability depends on Android permissions, peer scopes, device roles, installe
 | `protocol/schemas/` | JSON Schema contracts and synthetic examples |
 | `skills/` | Agent workflow recipes |
 | `docs/` | Selected public documentation and review evidence |
+| `licenses/` | License texts for bundled third-party components |
+| `.github/workflows/` | CI for the offline Go, Python and Android checks |
+
+`PUBLICATION_MANIFEST.json` records SHA-256 hashes of the published file set (see [publishing](docs/publishing.md)).
 
 ## Offline checks
 
 ```sh
+python -m pip install -r tools/requirements.txt
+python tools/publication.py check
 python tools/test_inbound.py
 python tools/test_converse_sim.py
 python -m unittest discover -s tools -p 'test_*.py'
@@ -58,7 +64,7 @@ go test ./...
 go vet ./...
 ```
 
-The conversation simulation uses real timing and takes several minutes. See [development](docs/development.md) for Android checks. `dry_call.py` and `judgement_eval.py` contact model services; device verification and SMS mesh scripts contact real phones. They are not offline tests.
+CI runs the same checks, with `go test -race ./...` (needs CGo) and an Android job running `bash gradlew testDebugUnitTest lintDebug assembleDebug`. The conversation simulation uses real timing and takes several minutes. See [development](docs/development.md) for Android checks. `dry_call.py` and `judgement_eval.py` contact model services; device verification and SMS mesh scripts contact real phones. They are not offline tests.
 
 ## Publishing and contributing
 

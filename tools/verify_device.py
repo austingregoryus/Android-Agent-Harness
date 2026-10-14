@@ -3,8 +3,8 @@
 Verify the general-purpose MCP surface against the REAL phone over the LAN and print a table.
 
     python tools/verify_device.py                # everything read-only, plus a calendar/file round trip
-    python tools/verify_device.py --sms +1...    # also send one SMS (needs approval or an allowlisted number)
-    python tools/verify_device.py --md docs/verification-2026-09-18.md   # append the table to a markdown file
+    python tools/verify_device.py --sms +1...    # also send one SMS (subject to the phone's policy: approval, allowlist, rate limits)
+    python tools/verify_device.py --md logs/verification.md   # append the table to a markdown file
     python tools/verify_device.py --device oneplus   # another phone: reads secrets/devices/oneplus/
 
 Reads secrets/device-url, device-token, device-tls-fingerprint (the admin token, all scopes), or the same three

@@ -20,6 +20,8 @@ cd android-runtime
 
 On Windows use `gradlew.bat`. Release output is unsigned: use your own signing workflow before installation/distribution. Never commit a signing key or password. Debug builds expose diagnostic receivers and belong on development devices.
 
+From the repository root:
+
 ```sh
 cd gateway
 go test ./...
@@ -27,7 +29,7 @@ go vet ./...
 go build -o bin/gateway ./cmd/gateway
 ```
 
-Use `bin/gateway.exe` on Windows. From the repository root:
+Use `bin/gateway.exe` on Windows. Python, from the repository root:
 
 ```sh
 python -m venv .venv
@@ -60,7 +62,7 @@ bin/gateway health --config config.local.yaml
 bin/gateway run --config config.local.yaml "Read the battery level"
 ```
 
-Pairing writes the token to `device.token_file`. Relative paths resolve against the config file's directory. Enable observe-only while exploring reads. Set provider keys in the environment variables named in the config; the `run` command contacts that provider. For an MCP host, configure it to launch `bin/gateway mcp --config config.local.yaml` using absolute executable/config paths. Health alone does not verify authenticated tools.
+Pairing writes the token to `device.token_file`. Relative paths resolve against the config file's directory. Enable observe-only while exploring reads. Set provider keys in the environment variables named in the config; the `run` command contacts that provider. For an MCP host, configure it to launch `bin/gateway mcp --config config.local.yaml` using absolute executable/config paths. Health alone does not verify authenticated tools. `health` also checks every provider in `failover` and exits non-zero if any is unreachable, and `run` needs a key for every hosted provider in that list; trim `failover` to the providers you actually use.
 
 Calls and SMS require a separate deliberate grant: follow the scoped pairing commands in [spoken calls](conversation-mode.md) or [inbound SMS](inbound.md). The gateway's default pairing ceiling is only `COMMUNICATION`; `telephony.place_call` and `messaging.send_sms` require `EXTERNAL_COMMITMENT`. Each pairing needs a new code, writes a new token, and does not revoke older peers; revoke unused peers in the phone UI. Neither a wider ceiling nor turning off observe-only replaces user authorization for a target or task.
 
@@ -68,12 +70,12 @@ For network access, enable LAN TLS on the phone, use `https://PHONE_HOST:8766` a
 
 The phone's `ai.ask` endpoint/model are separate from Python settings. First-time builders must configure `AiConfig` in `policy/PolicyModel.kt` or provision persisted policy. There is no endpoint editor in the UI. Defaults are loopback and `local-model`; use HTTPS for a network service or deliberately add a narrow Android network-security exception for your endpoint.
 
-Local service defaults changed during publication preparation. Existing Android persisted settings retain their
-values; Python installations should set the `SYMBIOSIS_*` endpoint variables documented in the call guide.
+Persisted Android settings override these code defaults. Python drivers read their service endpoints from the
+`SYMBIOSIS_*` environment variables documented in the call guide.
 
 ## Device checks
 
-`verify_device.py` uses ignored `secrets/device-url`, `device-token` and `device-tls-fingerprint`. Read its options: some probes write an app-local file; explicit write/SMS/call options add effects. `sms_mesh.py` sends real SMS. Neither belongs in offline CI. See [adding a phone](adding-a-phone.md) for privileged cellular audio.
+`verify_device.py` uses ignored `secrets/device-url`, `device-token` and `device-tls-fingerprint`. It expects a token with broad scopes; with the narrow peer above many rows fail or skip. Read its options: some probes write an app-local file; explicit write/SMS/call options add effects. `sms_mesh.py` sends real SMS. Neither belongs in offline CI. See [adding a phone](adding-a-phone.md) for privileged cellular audio.
 
 For the SMS mesh, create ignored `secrets/fleet.json` with at least two entries of the form
 `"test-phone": {"serial": "YOUR_ADB_SERIAL", "credentials_dir": "devices/test-phone", "debug": false}`.

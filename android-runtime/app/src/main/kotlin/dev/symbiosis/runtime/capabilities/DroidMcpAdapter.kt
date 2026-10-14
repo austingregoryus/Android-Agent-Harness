@@ -80,7 +80,7 @@ object DroidMcpAdapter {
     Meta("ui.press_global", ActionClass.DEVICE_MUTATION, tier = 2, rateClass = RateClass.MUTATION) to "global_action",
     // Mapped 2026-09-26 from droid-mcp 0.10.1's AccessibilityTools (names and params read from the AAR's classes).
     // Same class, tier and rate class as ui.tap_element on purpose: each is one screen action, so each counts one
-    // MUTATION slot like a tap. They do not widen docs/security.md §2.3a's accepted gap (screen control as a way
+    // MUTATION slot like a tap. They do not widen the accepted gap in docs/security.md#limits (screen control as a way
     // round the text/call brakes): a long-press, scroll or find-and-tap reaches nothing a tap_element sequence
     // could not already reach, at the same per-action cost. (lock_screen needs no mapping: it is already one of
     // ui.press_global's actions.)

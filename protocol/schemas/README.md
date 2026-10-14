@@ -24,7 +24,7 @@ cross-reference each other with `$ref` URIs where the doc reuses a shape (e.g. `
 
 - Every closed set the doc actually specifies (action classes, policy decisions, rate classes, session states,
   event topics, WS frame types, error codes, filter ops) is an `enum`/`const`, not a free string.
-- Policy resource fields follow `Runtime.resourceRead` and `PolicyModel`; pending-row fields follow `Db` and
+- Policy resource fields follow `Runtime.readResource` and `PolicyModel`; pending-row fields follow `Db` and
   `ApprovalManager`. The pending row is not an MCP resource and differs from the approval-required tool result.
   Code-default annotations do not establish the values in an existing installation's persisted settings.
 - A few shapes protocol.md names but never fully specifies (several `/ws/sessions`

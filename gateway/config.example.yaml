@@ -5,13 +5,14 @@
 # device.token_file (which is what `gateway pair` writes). Provider API keys come
 # from the environment variables named by providers[].api_key_env.
 #
-# Relative paths (token_file, sqlite_path) are resolved against this file's
-# directory.
+# Relative paths (token_file, tls_fingerprint_file, sqlite_path,
+# agent.converse_script) are resolved against this file's directory.
 
 device:
   # The phone runtime. Default bind is loopback, so reach it through
   #   adb forward tcp:18765 tcp:8765
-  # For LAN use https://PHONE_HOST:8766 and set tls_fingerprint from the phone UI.
+  # For LAN use https://PHONE_HOST:8766 and set tls_fingerprint_sha256 (or
+  # tls_fingerprint_file) from the fingerprint shown in the phone UI.
   base_url: http://127.0.0.1:18765
   token_env: SYMBIOSIS_DEVICE_TOKEN
   token_file: secrets/device-token
