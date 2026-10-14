@@ -52,11 +52,16 @@ class TurnDetector private constructor(private val env: OrtEnvironment, private 
     const val WINDOW_SAMPLES = WINDOW_SECONDS * WhisperMel.SAMPLE_RATE
     private const val INPUT = "input_features"
 
-    fun fromBytes(model: ByteArray): TurnDetector {
+    /**
+     * [optimization] stays ALL_OPT on the phone. With it the QDQ int8 graph runs on fused integer kernels that
+     * ONNX Runtime picks per CPU, so x86 hosts without VNNI can differ from the reference; tests that compare
+     * against a fixed probability use NO_OPT, which executes the same graph as float math on every CPU.
+     */
+    fun fromBytes(model: ByteArray, optimization: OrtSession.SessionOptions.OptLevel = OrtSession.SessionOptions.OptLevel.ALL_OPT): TurnDetector {
       val env = OrtEnvironment.getEnvironment()
       val opts = OrtSession.SessionOptions().apply {
         setIntraOpNumThreads(2)
-        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+        setOptimizationLevel(optimization)
       }
       return TurnDetector(env, env.createSession(model, opts))
     }

@@ -142,15 +142,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["session_id", "seq", "ts", "correlation_id", "type", "from_seq", "to_seq"],
-      "description": "Inferred by analogy to the /ws/events gap frame (section 4.3), adapted to this channel's seq-based (rather than event id-based) numbering; protocol.md section 5.1 names this frame type without restating its fields.",
+      "description": "Frames from_seq..to_seq were not sent on this socket (a backlog or a live hole larger than one page, docs/protocol.md section 5.1). Not persisted. Its seq is from_seq - 1, the last frame delivered before the hole, so a client resuming from the highest seq it has seen re-fetches the hole; reconnect with since_seq = from_seq - 1. correlation_id is null.",
       "properties": {
         "session_id": { "$ref": "#/$defs/sessionId" },
         "seq": { "$ref": "#/$defs/seq" },
         "ts": { "$ref": "#/$defs/ts" },
         "correlation_id": { "$ref": "#/$defs/correlationId" },
         "type": { "const": "gap" },
-        "from_seq": { "type": "integer", "minimum": 0 },
-        "to_seq": { "type": "integer", "minimum": 0 }
+        "from_seq": { "type": "integer", "minimum": 1 },
+        "to_seq": { "type": "integer", "minimum": 1 },
+        "hint": { "type": "string" }
       }
     },
     {

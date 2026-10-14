@@ -131,6 +131,77 @@
       },
       "required": ["topic", "payload"]
     }
+,
+    {
+      "properties": {
+        "topic": { "const": "messaging.rcs_received" },
+        "payload": { "$ref": "#/$defs/payloads/unspecified" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "call.precise_state" },
+        "payload": { "$ref": "#/$defs/payloads/unspecified" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "call.audio_state" },
+        "payload": { "$ref": "#/$defs/payloads/unspecified" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "call.listening" },
+        "payload": { "$ref": "#/$defs/payloads/unspecified" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "call.transcript" },
+        "payload": { "$ref": "#/$defs/payloads/unspecified" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "call.speaking" },
+        "payload": { "$ref": "#/$defs/payloads/unspecified" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "call.barge_in" },
+        "payload": { "$ref": "#/$defs/payloads/unspecified" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "call.conversation" },
+        "payload": { "$ref": "#/$defs/payloads/unspecified" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "automation.run_started" },
+        "payload": { "$ref": "#/$defs/payloads/unspecified" }
+      },
+      "required": ["topic", "payload"]
+    },
+    {
+      "properties": {
+        "topic": { "const": "automation.run_finished" },
+        "payload": { "$ref": "#/$defs/payloads/unspecified" }
+      },
+      "required": ["topic", "payload"]
+    }
   ],
   "$defs": {
     "topic": {
@@ -149,14 +220,28 @@
         "policy.approval_required",
         "policy.approval_resolved",
         "runtime.started",
-        "runtime.stopping"
+        "runtime.stopping",
+        "messaging.rcs_received",
+        "call.precise_state",
+        "call.audio_state",
+        "call.listening",
+        "call.transcript",
+        "call.speaking",
+        "call.barge_in",
+        "call.conversation",
+        "automation.run_started",
+        "automation.run_finished"
       ]
     },
     "actionClass": {
       "type": "string",
-      "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"]
+      "enum": ["READ_ONLY", "AUTOMATION", "SENSITIVE_READ", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"]
     },
     "payloads": {
+      "unspecified": {
+        "type": "object",
+        "description": "Payload shape not yet specified in this schema; see the emitting code (android-runtime/.../events/Event.kt Topics and its call sites)."
+      },
       "messaging.sms_received": {
         "type": "object",
         "additionalProperties": false,

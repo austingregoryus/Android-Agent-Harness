@@ -13,7 +13,8 @@ import kotlinx.coroutines.launch
  * Receives Approve/Deny from the approval notification. Not exported: only our own PendingIntents
  * reach it. In DEBUG builds only, `adb shell am broadcast -n dev.symbiosis.runtime/.policy.ApprovalReceiver
  * -a dev.symbiosis.DEBUG_RESOLVE --es id pa_xxx --es decision approve` is also accepted, so the
- * allow path can be exercised on an emulator without a human tapping the notification.
+ * allow path can be exercised on an emulator without a human tapping the notification. The debug export
+ * requires android.permission.DUMP, which the adb shell holds and installed apps cannot.
  */
 class ApprovalReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {

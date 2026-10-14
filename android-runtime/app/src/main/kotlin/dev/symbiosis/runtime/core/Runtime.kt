@@ -14,6 +14,7 @@ import dev.symbiosis.runtime.capabilities.CapabilityResult
 import dev.symbiosis.runtime.capabilities.DroidMcpAdapter
 import dev.symbiosis.runtime.capabilities.NativeCapabilities
 import dev.symbiosis.runtime.capabilities.Principal
+import dev.symbiosis.runtime.capabilities.SelfProtection
 import dev.symbiosis.runtime.events.EventBroker
 import dev.symbiosis.runtime.events.SubscriptionStore
 import dev.symbiosis.runtime.events.Topics
@@ -99,6 +100,8 @@ class Runtime private constructor(private val context: Context) {
     executor = automationExecutor,
     // The owner's CURRENT principal: a revoked or expired peer's workflows do not run (and get disabled).
     principalFor = { id -> principalOf(id) },
+    // A call's events (transcripts included) trigger only workflows whose owner owns that call.
+    sessionOwner = { id -> sessions.ownerOf(id) },
     emergencyStopped = { policy.emergencyStop.value },
     alarms = dev.symbiosis.runtime.automation.AndroidAlarms(context),
     scope = scope,
@@ -124,6 +127,9 @@ class Runtime private constructor(private val context: Context) {
   private var server: Server? = null
   private var maintenanceJob: Job? = null
   private val startedAt = Ids.now()
+
+  /** When a peer last used screen control; approvals right after it are ignored (see resolveApproval). */
+  val screenControl = dev.symbiosis.runtime.capabilities.ScreenControlWindow()
 
   /** Idempotency keys currently executing, per peer, so a concurrent duplicate cannot run twice. */
   private val inFlight = ConcurrentHashMap.newKeySet<String>()
@@ -175,6 +181,7 @@ class Runtime private constructor(private val context: Context) {
       }
     }
     peers.knownCapabilities = { registry.names() }
+    approvals.capabilityFor = { registry.get(it) }
     registerCapabilities()
     // After the hooks, so each is audited and announced as session.state like any other transition.
     runCatching { calls.failStale("process_restart") }
@@ -256,7 +263,7 @@ class Runtime private constructor(private val context: Context) {
     }
     registry.registerAll(DroidMcpAdapter.adapt(context, droid))
     registry.registerAll(NativeCapabilities.telephony(calls, sessions))
-    registry.registerAll(NativeCapabilities.events(broker, subscriptions))
+    registry.registerAll(NativeCapabilities.events(broker, subscriptions) { sessions.ownerOf(it) })
     registry.registerAll(NativeCapabilities.device(context) { status() })
     // Conversation mode is part of the release surface (live-verified on the Pixel, Sept 2026).
     registry.register(dev.symbiosis.runtime.capabilities.CallSpeech.speakCapability(context, broker, sessions))
@@ -426,12 +433,20 @@ class Runtime private constructor(private val context: Context) {
     }
     val missing = cap.requiredPermissions.filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
     if (missing.isNotEmpty()) { policy.release(allow); return CapabilityResult.missingPermission(*missing.toTypedArray()) }
+    // Agents never operate this app's own screens or notifications (capabilities/SelfProtection.kt). Checked here,
+    // at execution time, so a batch step or a late approval is held to it as well as a direct call.
+    SelfProtection.refusal(cap.name, args, context.packageName) { SelfProtection.ownWindowShowing(context) }
+      ?.let { policy.release(allow); return it }
+    val screen = SelfProtection.countsAsScreenControl(cap.name)
+    if (screen) screenControl.mark()
     return try {
       withContext(Dispatchers.IO) { cap.execute(args, ctx.copy(principal = current)) }.also { if (!it.ok) policy.release(allow) }
     } catch (t: Throwable) {
       android.util.Log.e("Runtime", "capability ${cap.name} threw", t)
       policy.release(allow)
       CapabilityResult.fail("capability.failed", t.message ?: t.javaClass.simpleName)
+    } finally {
+      if (screen) screenControl.mark()
     }
   }
 
@@ -463,12 +478,37 @@ class Runtime private constructor(private val context: Context) {
     }
   }
 
-  suspend fun resolveApproval(id: String, approved: Boolean, via: String) {
-    val res = approvals.resolve(id, approved) ?: return
+  /**
+   * Apply an Approve/Deny tap. Returns null when it was applied, else why not: [APPROVAL_IGNORED_SCREEN_CONTROL]
+   * (left pending, try again shortly) or [APPROVAL_NOT_PENDING] (unknown, already resolved or expired).
+   */
+  suspend fun resolveApproval(id: String, approved: Boolean, via: String): String? {
+    // An approval right after a peer used screen control may be that peer tapping Approve itself (in this app or in
+    // the notification shade). Leave it pending and audit it. Denials always go through. The adb debug broadcast is
+    // exempt: only the shell (DUMP permission) can send it, never an agent's tap.
+    if (approved && via != "debug-broadcast" && screenControl.recentlyUsed()) {
+      val pa = approvals.get(id)
+      audit.append(AuditEntry(ts = Ids.now(), correlationId = pa?.correlationId, peerId = pa?.peerId, kind = AuditKind.APPROVAL, capability = pa?.capability, actionClass = pa?.actionClass?.name, result = JsonPrimitive("ignored"), args = buildJsonObject { put("pending_action_id", id); put("via", via) }, success = false, errorCode = APPROVAL_IGNORED_SCREEN_CONTROL))
+      return APPROVAL_IGNORED_SCREEN_CONTROL
+    }
+    val res = approvals.resolve(id, approved) ?: return APPROVAL_NOT_PENDING
     val pa = res.action
     audit.append(AuditEntry(ts = Ids.now(), correlationId = pa.correlationId, peerId = pa.peerId, kind = AuditKind.APPROVAL, capability = pa.capability, actionClass = pa.actionClass.name, result = JsonPrimitive(if (approved) "approved" else "denied"), args = buildJsonObject { put("pending_action_id", id); put("via", via); put("late", res.late) }, success = approved))
     broker.emit(Topics.APPROVAL_RESOLVED, mapOf("pending_action_id" to id, "decision" to if (approved) "approved" else "denied", "capability" to pa.capability, "via" to via, "late" to res.late), pa.correlationId)
     if (approved && res.late) executeApproved(pa)
+    return null
+  }
+
+  /**
+   * The app's "Rotate admin token" control. The old token stops authenticating at once (PeerStore reads the
+   * current one on every request); sockets and MCP sessions opened with it are closed, and the admin's pending
+   * approvals are cancelled so nothing queued under the old token can still run.
+   */
+  fun rotateAdminToken() {
+    secure.rotateAdminToken()
+    server?.closeSocketsFor(PeerStore.ADMIN_ID, "admin_token_rotated")
+    val cancelled = approvals.cancelPending(PeerStore.ADMIN_ID, "admin_token_rotated")
+    audit.append(AuditEntry(ts = Ids.now(), correlationId = null, peerId = PeerStore.ADMIN_ID, kind = AuditKind.ADMIN, capability = "admin_token_rotate", success = true, result = buildJsonObject { put("cancelled_pending", cancelled) }))
   }
 
   private fun toolResultJson(r: CapabilityResult, ctx: CallContext, durationMs: Long, auditId: Long? = null): JsonObject {
@@ -515,7 +555,7 @@ class Runtime private constructor(private val context: Context) {
     "phone://policy" -> if (!principal.isAdmin) null else buildJsonObject { put("config", Json.lenient.encodeToJsonElement(dev.symbiosis.runtime.policy.PolicyConfig.serializer(), policy.config.value)); put("overrides", Json.toJson(policy.overrides().mapValues { it.value.name })); put("emergency_stop", policy.emergencyStop.value); put("observe_only", policy.observeOnly.value) }
     "phone://sessions" -> JsonArray(sessions.recent(20).filter { principal.isAdmin || (it.peerId != null && it.peerId == principal.peerId) }.map { sessions.toJson(it) })
     "phone://events/recent" -> if (!principal.isAdmin && !principal.canSubscribe("policy.x")) null
-      else JsonArray(broker.recent(50).filter { principal.canSeeTopic(it.topic) }.map { Json.lenient.encodeToJsonElement(dev.symbiosis.runtime.events.Event.serializer(), it) })
+      else JsonArray(broker.recent(50).filter { principal.canSeeEvent(it) { id -> sessions.ownerOf(id) } }.map { Json.lenient.encodeToJsonElement(dev.symbiosis.runtime.events.Event.serializer(), it) })
     "phone://audit/verify" -> if (!principal.isAdmin) null else {
       val broken = audit.verifyChain(); val anchor = audit.anchor()
       buildJsonObject { put("intact", broken == null); put("first_broken_id", broken); put("entries", audit.count()); put("verified_from_id", anchor?.firstKeptId); put("pruned_through", anchor?.createdAt) }
@@ -551,6 +591,9 @@ class Runtime private constructor(private val context: Context) {
   )
 
   companion object {
+    const val APPROVAL_IGNORED_SCREEN_CONTROL = "approval.ignored_screen_control"
+    const val APPROVAL_NOT_PENDING = "approval.not_pending"
+
     /**
      * Whether a stored outcome may be replayed for this call: null = replay it, else the refusal code.
      *  - A key is only a claim about WHICH call this is. Replay only if the stored outcome is for this very tool and

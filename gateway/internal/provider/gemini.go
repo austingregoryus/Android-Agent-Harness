@@ -2,10 +2,15 @@ package provider
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
+	"sync/atomic"
+	"time"
 )
 
 // DefaultGeminiModel is used when the configuration omits a model.
@@ -96,6 +101,52 @@ type geminiPart struct {
 	Text             string                  `json:"text,omitempty"`
 	FunctionCall     *geminiFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *geminiFunctionResponse `json:"functionResponse,omitempty"`
+	// Thought marks a thought-summary part. It is model reasoning, not answer
+	// text, and is kept only as an opaque part.
+	Thought bool `json:"thought,omitempty"`
+	// ThoughtSignature is the opaque token a thinking model attaches to a part.
+	// Gemini expects it echoed back on that same part of the history (on
+	// function calls in particular), so it is kept as the canonical part's
+	// Signature and replayed to Gemini only.
+	ThoughtSignature string `json:"thoughtSignature,omitempty"`
+
+	// raw is the verbatim JSON of a part with no canonical equivalent (a thought
+	// summary, or a signature riding on an empty part). When set it is emitted
+	// instead of the typed fields, so the part survives a round trip unchanged.
+	raw json.RawMessage
+}
+
+// opaque reports whether a decoded part has no canonical equivalent and must be
+// carried as an opaque provider-bound part.
+func (p geminiPart) opaque() bool {
+	if p.Thought {
+		return true
+	}
+	return p.FunctionCall == nil && p.FunctionResponse == nil && p.Text == "" && p.ThoughtSignature != ""
+}
+
+// MarshalJSON emits an opaque part verbatim, and every other part from its
+// typed fields.
+func (p geminiPart) MarshalJSON() ([]byte, error) {
+	if len(p.raw) > 0 {
+		return p.raw, nil
+	}
+	type plain geminiPart
+	return json.Marshal(plain(p))
+}
+
+// UnmarshalJSON captures the verbatim bytes of an opaque part.
+func (p *geminiPart) UnmarshalJSON(data []byte) error {
+	type plain geminiPart
+	var v plain
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	*p = geminiPart(v)
+	if p.opaque() {
+		p.raw = append(json.RawMessage(nil), data...)
+	}
+	return nil
 }
 
 type geminiFunctionCall struct {
@@ -150,6 +201,23 @@ func geminiToolName(name string) string { return name }
 // to Gemini as functionCall.id.
 const geminiCallIDPrefix = "call_"
 
+// geminiCallSeq disambiguates minted ids should crypto/rand ever fail.
+var geminiCallSeq atomic.Uint64
+
+// mintGeminiCallID returns a fresh tool-call id for a call the model sent
+// without one. The canonical transcript outlives the turn and may be replayed
+// to another provider after failover, so the id must be unique across turns
+// (the old "call_<index>_<name>" restarted at 0 every turn) and use only
+// [A-Za-z0-9_-] (Anthropic rejects any other tool_use id, and tool names
+// carry dots).
+func mintGeminiCallID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		binary.BigEndian.PutUint64(b[:], uint64(time.Now().UnixNano())+geminiCallSeq.Add(1))
+	}
+	return geminiCallIDPrefix + hex.EncodeToString(b[:])
+}
+
 // geminiModelCallID returns the id the model itself minted, or "" when the id
 // was synthesized locally by decodeGeminiResponse.
 func geminiModelCallID(canonicalID string) string {
@@ -165,7 +233,7 @@ func (p *GeminiProvider) encodeGeminiRequest(req GenerateRequest) geminiRequest 
 	if req.System != "" {
 		out.SystemInstruction = &geminiContent{Parts: []geminiPart{{Text: req.System}}}
 	}
-	out.Contents = encodeGeminiContents(req.Messages)
+	out.Contents = encodeGeminiContents(req.Messages, p.name)
 	if len(req.Tools) > 0 {
 		decls := make([]geminiFunctionDeclaration, 0, len(req.Tools))
 		for _, t := range req.Tools {
@@ -193,7 +261,9 @@ func (p *GeminiProvider) encodeGeminiRequest(req GenerateRequest) geminiRequest 
 
 // encodeGeminiContents maps canonical messages onto Gemini contents. Gemini has
 // only "user" and "model" roles; function responses ride in a user-role content.
-func encodeGeminiContents(msgs []Message) []geminiContent {
+// Opaque parts and thought signatures are replayed only on a model turn this
+// provider (providerName) produced.
+func encodeGeminiContents(msgs []Message, providerName string) []geminiContent {
 	// callNames maps tool-call ids to tool names, because Gemini identifies a
 	// functionResponse by name when the model minted no id.
 	callNames := map[string]string{}
@@ -207,13 +277,24 @@ func encodeGeminiContents(msgs []Message) []geminiContent {
 			continue
 		case RoleAssistant:
 			c := geminiContent{Role: "model"}
+			own := providerName != "" && m.Provider == providerName
+			signature := func(part Part) string {
+				if own && part.Provider == providerName {
+					return part.Signature
+				}
+				return ""
+			}
 			for _, part := range m.Parts {
 				switch part.Type {
+				case PartOpaque:
+					if own && part.Provider == providerName && len(part.Raw) > 0 {
+						c.Parts = append(c.Parts, geminiPart{raw: part.Raw})
+					}
 				case PartText:
 					if part.Text == "" {
 						continue
 					}
-					c.Parts = append(c.Parts, geminiPart{Text: part.Text})
+					c.Parts = append(c.Parts, geminiPart{Text: part.Text, ThoughtSignature: signature(part)})
 				case PartToolCall:
 					callNames[part.ID] = part.Name
 					id := geminiModelCallID(part.ID)
@@ -224,7 +305,7 @@ func encodeGeminiContents(msgs []Message) []geminiContent {
 						ID:   id,
 						Name: geminiToolName(part.Name),
 						Args: encodeArgs(part.Args),
-					}})
+					}, ThoughtSignature: signature(part)})
 				}
 			}
 			if len(c.Parts) == 0 {
@@ -291,8 +372,10 @@ func decodeGeminiContents(contents []geminiContent) []Message {
 			cm := Message{Role: RoleAssistant}
 			for _, p := range c.Parts {
 				switch {
+				case p.opaque():
+					// Nothing to bind an opaque part to without a provider name.
 				case p.FunctionCall != nil:
-					cm.Parts = append(cm.Parts, ToolCallPart(p.FunctionCall.ID, p.FunctionCall.Name, decodeArgs(p.FunctionCall.Args)))
+					cm.Parts = append(cm.Parts, toolCallFromJSON(p.FunctionCall.ID, p.FunctionCall.Name, p.FunctionCall.Args))
 				case p.Text != "":
 					cm.Parts = append(cm.Parts, TextPart(p.Text))
 				}
@@ -346,28 +429,39 @@ func geminiUnwrapResponse(env map[string]any) (callID, content string, isError b
 }
 
 // decodeGeminiResponse converts a generateContent response into a canonical
-// assistant message. Gemini does not mint tool-call ids, so the gateway assigns
-// deterministic ones of the form "call_<index>_<name>".
+// assistant message. Older models mint no tool-call ids, so the gateway assigns
+// unique API-safe ones (see mintGeminiCallID). Thought signatures stay on the
+// part they came with, bound to this provider; thought summaries and
+// signature-only parts become opaque parts.
 func decodeGeminiResponse(name string, resp geminiResponse) GenerateResult {
 	msg := Message{Role: RoleAssistant, Provider: name}
 	stop := StopOther
 	details := ""
+	sign := func(part Part, sig string) Part {
+		if sig != "" && name != "" {
+			part.Signature = sig
+			part.Provider = name
+		}
+		return part
+	}
 	if len(resp.Candidates) > 0 {
 		cand := resp.Candidates[0]
-		idx := 0
 		for _, p := range cand.Content.Parts {
 			switch {
+			case p.opaque():
+				if len(p.raw) > 0 && name != "" {
+					msg.Parts = append(msg.Parts, OpaquePart(name, p.raw))
+				}
 			case p.FunctionCall != nil:
 				// Prefer the model's own id: with parallel calls to the same
 				// function it is the only thing that keeps the results apart.
 				id := p.FunctionCall.ID
 				if id == "" {
-					id = fmt.Sprintf("%s%d_%s", geminiCallIDPrefix, idx, p.FunctionCall.Name)
+					id = mintGeminiCallID()
 				}
-				msg.Parts = append(msg.Parts, ToolCallPart(id, p.FunctionCall.Name, decodeArgs(p.FunctionCall.Args)))
-				idx++
+				msg.Parts = append(msg.Parts, sign(toolCallFromJSON(id, p.FunctionCall.Name, p.FunctionCall.Args), p.ThoughtSignature))
 			case p.Text != "":
-				msg.Parts = append(msg.Parts, TextPart(p.Text))
+				msg.Parts = append(msg.Parts, sign(TextPart(p.Text), p.ThoughtSignature))
 			}
 		}
 		switch cand.FinishReason {

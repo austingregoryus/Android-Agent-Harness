@@ -29,7 +29,7 @@
     },
     "max_action_class": {
       "type": "string",
-      "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"],
+      "enum": ["READ_ONLY", "AUTOMATION", "SENSITIVE_READ", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"],
       "description": "Ceiling: a tool is visible to this peer iff a scope matches AND the tool's action class <= this ceiling."
     },
     "created_at": {

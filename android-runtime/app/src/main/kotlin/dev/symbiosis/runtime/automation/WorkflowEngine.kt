@@ -36,7 +36,8 @@ fun interface AlarmSink { fun arm(atMs: Long?) }
  *
  * For each event, per workflow, in this order:
  *  1. **Topic and scope.** The trigger's topic glob must match, and the owner's *current* principal must exist and be
- *     allowed to see the topic. Failing either is silent (no log line): a logged skip would tell the owner, one bit
+ *     allowed to see the event (its topic, and for an event naming a `session_id`, that session must be the
+ *     owner's: Principal.canSeeEvent). Failing either is silent (no log line): a logged skip would tell the owner, one bit
  *     at a time, which events on topics they cannot see matched their `where`.
  *  2. **Loop guard (global).** Every run gets its own correlation id, carried by every step and by every event a
  *     step causes *that carries a correlation id at all*. An event whose correlation id belongs to ANY recent
@@ -62,6 +63,8 @@ fun interface AlarmSink { fun arm(atMs: Long?) }
  * same for every workflow.
  *
  * @param principalFor the owner's CURRENT principal (null if revoked/expired).
+ * @param sessionOwner the peer owning a session named in an event payload (SessionManager.ownerOf). The default
+ *   resolves nothing, so session events then trigger only the admin's workflows.
  * @param gate false while the runtime is switched off in the app: triggers are ignored and due schedules are
  *   skipped to their next occurrence (`skipped:runtime_off`).
  */
@@ -76,6 +79,7 @@ class WorkflowEngine(
   private val audit: (peerId: String?, corr: String, args: JsonObject, result: JsonObject?, ok: Boolean?) -> Unit = { _, _, _, _, _ -> },
   private val gate: () -> Boolean = { true },
   private val clock: () -> Long = Ids::now,
+  private val sessionOwner: (String) -> String? = { null },
 ) {
   /** What a trigger came to. [Run] carries the job so callers (and tests) can await it. */
   sealed class Decision {
@@ -135,7 +139,7 @@ class WorkflowEngine(
       if (!TopicGlob.matches(t.topic, ev.topic)) continue
       // Scope before anything observable: silent, and before where/cooldown/slot so nothing leaks or is consumed.
       val owner = owners.getOrPut(wf.owner) { principalFor(wf.owner) } ?: continue
-      if (!owner.canSeeTopic(ev.topic)) continue
+      if (!owner.canSeeEvent(ev, sessionOwner)) continue
       if (guarded) { out += skip(wf, "event:${ev.topic}", "loop_guard", ev, detail = "event caused by workflow run ${ev.correlation_id}"); continue }
       val matched = try { t.where == null || Matcher.where(t.where, ev.payload) } catch (e: RegexTimeout) {
         out += skip(wf, "event:${ev.topic}", "regex_timeout", ev, detail = e.message); continue
@@ -265,7 +269,7 @@ class WorkflowEngine(
       // Re-read: the workflow may have been disabled, edited or deleted while this run waited.
       val fresh = store.getById(wf.id)?.takeIf { it.enabled } ?: return@launch
       val owner = principalFor(fresh.owner) ?: return@launch
-      if (p.second != null && !owner.canSeeTopic(p.second!!.topic)) return@launch
+      if (p.second != null && !owner.canSeeEvent(p.second!!, sessionOwner)) return@launch
       fire(fresh, p.first, p.second)
     }
   }

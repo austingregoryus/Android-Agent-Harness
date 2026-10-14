@@ -1,9 +1,9 @@
 """
 Judgement eval for the phone brain: the exact failure cases from the bad live calls, run against router models.
 
-    python tools/judgement_eval.py                 # voice, nemotron-lightning, ornith-1.5 on the LAN router
-    python tools/judgement_eval.py voice           # one model
-    LLM_BASE=https://api.anthropic.com/v1 LLM_API_KEY=sk-... LLM_REASONING=off         python tools/judgement_eval.py claude-haiku-4-5-20251001      # a hosted brain (see docs/brain-options.md)
+    python tools/judgement_eval.py                 # converse.LOCAL_DEFAULT_MODEL on the local endpoint
+    python tools/judgement_eval.py MODEL_ID        # one or more named models
+    LLM_BASE=https://api.anthropic.com/v1 LLM_API_KEY=sk-... LLM_REASONING=off         python tools/judgement_eval.py claude-haiku-4-5-20251001      # a hosted brain
 
 Prints time-to-first-token, the reply, and whether hang_up was called. Read the replies against the `want`
 notes by eye; the point is to catch a model (or a prompt change) that hangs up on "No", invents facts about

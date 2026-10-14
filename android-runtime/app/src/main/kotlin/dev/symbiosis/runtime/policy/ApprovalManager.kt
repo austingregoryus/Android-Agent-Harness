@@ -46,6 +46,9 @@ class ApprovalManager(private val context: Context, private val db: Db) {
   private val waiters = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
   private val requestCodes = AtomicInteger(1000)
 
+  /** Capability lookup for the prompt's argument summary (set by Runtime; [ApprovalSummary] orders by it). */
+  @Volatile var capabilityFor: (String) -> dev.symbiosis.runtime.capabilities.Capability? = { null }
+
   init { ensureChannel() }
 
   /** True when approval notifications can actually be shown (API 33+ needs the runtime permission). */
@@ -202,15 +205,28 @@ class ApprovalManager(private val context: Context, private val db: Db) {
         .putExtra(ApprovalReceiver.EXTRA_ID, pa.id).putExtra(ApprovalReceiver.EXTRA_DECISION, decision)
       // Distinct request codes per PendingIntent: extras are not part of PendingIntent identity.
       val pi = PendingIntent.getBroadcast(context, requestCodes.incrementAndGet(), i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-      return Notification.Action.Builder(null, label, pi).build()
+      val b = Notification.Action.Builder(null, label, pi)
+      // Approve and Deny need the device unlocked first: a tap from the lock screen asks for the PIN.
+      if (Build.VERSION.SDK_INT >= 31) b.setAuthenticationRequired(true)
+      return b.build()
     }
-    val summary = pa.args.entries.take(3).joinToString(", ") { (k, v) -> "$k=${v.toString().take(40)}" }
+    // Target first, then the body, every value in full; undeclared args flagged (ApprovalSummary).
+    val lines = ApprovalSummary.lines(capabilityFor(pa.capability), pa.args)
+    val summary = ApprovalSummary.format(lines)
+    // The lock screen shows only this redacted version (VISIBILITY_PRIVATE below).
+    val redacted = Notification.Builder(context, CHANNEL)
+      .setSmallIcon(android.R.drawable.ic_dialog_alert)
+      .setContentTitle("Approval needed")
+      .setContentText("Unlock to review")
+      .build()
     val n = Notification.Builder(context, CHANNEL)
       .setSmallIcon(android.R.drawable.ic_dialog_alert)
       .setContentTitle("Approve ${pa.capability}?")
-      .setContentText("$reason · $summary")
+      .setContentText("$reason · ${lines.firstOrNull()?.let { "${it.key}: ${it.value}" } ?: "no arguments"}")
       .setStyle(Notification.BigTextStyle().bigText("${pa.actionClass} · $reason\n$summary\nExpires in ${(pa.expiresAt - Ids.now()) / 60000} min"))
       .setCategory(Notification.CATEGORY_ALARM)
+      .setVisibility(Notification.VISIBILITY_PRIVATE)
+      .setPublicVersion(redacted)
       .setAutoCancel(false)
       .setOngoing(true)
       .addAction(action("approve", "Approve"))

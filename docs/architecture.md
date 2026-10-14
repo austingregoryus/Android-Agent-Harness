@@ -4,7 +4,7 @@ Android Agent Harness has three cooperating layers. The phone is the authority b
 
 ## Android runtime
 
-`core/Runtime.kt` is the composition root. `RuntimeService` runs as a foreground service with visible stop controls. `ui/MainActivity.kt` provides pairing, permission and safety controls. The app targets Android 36, requires Android 10 or later, and uses droid-mcp adapters plus native implementations.
+`core/Runtime.kt` is the composition root. `RuntimeService` runs as a foreground service with visible stop controls. `ui/MainActivity.kt` provides pairing, permission and safety controls. The app targets API level 36 (Android 16), requires Android 10 (API 29) or later, and uses droid-mcp adapters plus native implementations.
 
 `CapabilityRegistry` describes tools. `ToolDispatch` checks the caller's scope, action-class ceiling and arguments before `Runtime.invoke` applies idempotency, audit, policy, approval and rate reservation. Every automation step uses this path. Human approval is rechecked against current peer authority and policy before execution.
 

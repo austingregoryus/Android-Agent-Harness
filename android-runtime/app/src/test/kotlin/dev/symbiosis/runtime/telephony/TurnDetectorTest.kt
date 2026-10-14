@@ -1,5 +1,6 @@
 package dev.symbiosis.runtime.telephony
 
+import ai.onnxruntime.OrtSession.SessionOptions.OptLevel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.float
 import kotlinx.serialization.json.jsonObject
@@ -111,10 +112,10 @@ class TurnDetectorTest {
    * DLL fails in its init routine for 1.28 and 1.29). On-device verification can use
    * `debug.turn_selftest`; here we only skip rather than fail when the host runtime is unusable.
    */
-  private fun detectorOrSkip(): TurnDetector {
+  private fun detectorOrSkip(optimization: OptLevel = OptLevel.ALL_OPT): TurnDetector {
     val model = File("src/main/assets/${TurnDetector.ASSET}").readBytes()
     return try {
-      TurnDetector.fromBytes(model)
+      TurnDetector.fromBytes(model, optimization)
     } catch (e: Throwable) {
       if (e is UnsatisfiedLinkError || e is NoClassDefFoundError || e.cause is UnsatisfiedLinkError) {
         assumeTrue("ONNX runtime native library unavailable on this host: ${e.message}", false)
@@ -125,21 +126,35 @@ class TurnDetectorTest {
 
   @Test
   fun `model reproduces the reference probability`() {
+    // Against the stored reference: unoptimized float execution, identical on every CPU. The fused int8 kernels
+    // that ALL_OPT selects vary with the host CPU (a GitHub runner produced more than twice the reference).
+    detectorOrSkip(OptLevel.NO_OPT).use { exact ->
+      val want = goldenMetadata()["expected_probability"]!!.jsonPrimitive.float
+      val got = exact.probabilityFromFeatures(goldenFeatures())
+      assertEquals("unoptimized model on reference features: got $got, reference $want", want, got, 0.01f)
+    }
+    // Our front end against the reference features, both through the production session on this host.
     detectorOrSkip().use { det ->
       val pRef = det.probabilityFromFeatures(goldenFeatures())
-      assertEquals(goldenMetadata()["expected_probability"]!!.jsonPrimitive.float, pRef, 0.01f)
       val t0 = System.nanoTime()
       val p = det.probability(goldenPcm())
       println("end-to-end: ${(System.nanoTime() - t0) / 1_000_000} ms, p=$p (reference features -> $pRef)")
-      assertEquals(pRef, p, 0.02f)
+      assertEquals("end-to-end p=$p vs reference features $pRef", pRef, p, 0.02f)
     }
   }
 
   @Test
-  fun `short input is padded at the front and silence is not a finished turn`() {
+  fun `short input is padded at the front and only len samples count`() {
+    // Smart Turn v3.2 scores pure digital silence as a finished turn (p~0.99, same under the Python
+    // onnxruntime), so silence is no test of padding. CallConversation only asks after the VAD has heard speech.
     detectorOrSkip().use { det ->
-      val p = det.probability(ShortArray(16_000)) // one second of digital silence
-      assertTrue("silence should not read as a completed turn (p=$p)", p < 0.5f)
+      val pcm = goldenPcm()
+      val tail = pcm.copyOfRange(pcm.size - 48_000, pcm.size) // the last 3 s carry the generated signal
+      val padded = ShortArray(TurnDetector.WINDOW_SAMPLES).also { tail.copyInto(it, TurnDetector.WINDOW_SAMPLES - tail.size) }
+      val want = det.probability(padded)
+      assertEquals("short input must equal an explicitly front-padded window", want, det.probability(tail), 1e-4f)
+      val withTrailing = tail + ShortArray(8_000) { 12_000 }
+      assertEquals("samples after len must be ignored", want, det.probability(withTrailing, tail.size), 1e-4f)
     }
   }
 }

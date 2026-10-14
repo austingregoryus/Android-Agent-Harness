@@ -20,6 +20,8 @@ object DroidMcpAdapter {
     val permissions: List<String> = emptyList(),
     val targetArg: String? = null,
     val emits: List<String> = emptyList(),
+    /** See [Capability.targetResolver]: for tools whose target is not an argument. */
+    val targetResolver: ((Map<String, Any?>) -> List<String>)? = null,
   )
 
   private const val P_SMS_READ = "android.permission.READ_SMS"
@@ -66,7 +68,11 @@ object DroidMcpAdapter {
     Meta("location.get_address", ActionClass.SENSITIVE_READ, permissions = listOf(P_LOC)) to "get_location_address",
     // notifications (listener-backed)
     Meta("notifications.list", ActionClass.SENSITIVE_READ, tier = 2) to "list_repliable_notifications",
-    Meta("notifications.reply", ActionClass.COMMUNICATION, tier = 2, rateClass = RateClass.SMS) to "reply_to_notification",
+    // EXTERNAL_COMMITMENT like messaging.send_sms: it sends a real message, so "Ask me first" and the contact lists
+    // apply. The lists see the notification's sender (notificationIdentities); a sender it cannot name is treated
+    // as not on the allowlist. Standard peers keep it: their ceiling is EXTERNAL_COMMITMENT.
+    Meta("notifications.reply", ActionClass.EXTERNAL_COMMITMENT, tier = 2, rateClass = RateClass.SMS,
+      targetResolver = { args -> notificationIdentities(args["key"]?.toString()) }) to "reply_to_notification",
     Meta("notifications.dismiss", ActionClass.LOW_RISK, tier = 2) to "dismiss_notification",
     Meta("notifications.invoke_action", ActionClass.DEVICE_MUTATION, tier = 2, rateClass = RateClass.MUTATION) to "invoke_notification_action",
     // ui (accessibility-backed; passthrough, disabled by scope until a device has the service on)
@@ -80,7 +86,7 @@ object DroidMcpAdapter {
     Meta("ui.press_global", ActionClass.DEVICE_MUTATION, tier = 2, rateClass = RateClass.MUTATION) to "global_action",
     // Mapped 2026-09-26 from droid-mcp 0.10.1's AccessibilityTools (names and params read from the AAR's classes).
     // Same class, tier and rate class as ui.tap_element on purpose: each is one screen action, so each counts one
-    // MUTATION slot like a tap. They do not widen docs/security.md §2.3a's accepted gap (screen control as a way
+    // MUTATION slot like a tap. They do not widen the accepted gap in docs/security.md#limits (screen control as a way
     // round the text/call brakes): a long-press, scroll or find-and-tap reaches nothing a tap_element sequence
     // could not already reach, at the same per-action cost. (lock_screen needs no mapping: it is already one of
     // ui.press_global's actions.)
@@ -116,6 +122,7 @@ object DroidMcpAdapter {
       readOnly = tool.annotations.readOnlyHint || meta.actionClass <= ActionClass.SENSITIVE_READ,
       idempotent = tool.annotations.idempotentHint,
       targetArg = meta.targetArg,
+      targetResolver = meta.targetResolver,
       execute = { args, _ ->
         val missing = meta.permissions.filter { context.checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
         if (missing.isNotEmpty()) CapabilityResult.missingPermission(*missing.toTypedArray())
@@ -132,6 +139,27 @@ object DroidMcpAdapter {
         }
       },
     )
+  }
+
+  /**
+   * Who a reply to notification [key] reaches, for the contact lists: the conversation title, the title (the
+   * sender's name, or their number when it is not a contact), and each other sender in a MessagingStyle thread by
+   * name and by number (a `tel:`/`sms:` person URI). Empty when the notification is unknown or names nobody.
+   */
+  internal fun notificationIdentities(key: String?): List<String> {
+    if (key.isNullOrBlank()) return emptyList()
+    val n = io.droidmcp.notification.NotificationStore.findByKey(key)?.notification ?: return emptyList()
+    val out = linkedSetOf<String>()
+    n.extras?.getCharSequence(android.app.Notification.EXTRA_CONVERSATION_TITLE)?.toString()?.let(out::add)
+    n.extras?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()?.let(out::add)
+    runCatching { androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n) }.getOrNull()?.let { style ->
+      // A message with no person is the device user's own; it names nobody the reply reaches.
+      for (p in style.messages.mapNotNull { it.person }) {
+        p.name?.toString()?.let(out::add)
+        p.uri?.let { u -> Regex("^(tel|sms|smsto):", RegexOption.IGNORE_CASE).find(u)?.let { out.add(u.substring(it.range.last + 1)) } }
+      }
+    }
+    return out.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
   }
 
   /** droid-mcp reads loosely typed values but some tools cast; coerce JSON numbers to the declared type. */

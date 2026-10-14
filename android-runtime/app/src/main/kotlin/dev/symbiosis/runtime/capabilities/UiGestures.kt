@@ -31,7 +31,7 @@ object UiGestures {
       Param("y", "number", "Screen Y in pixels", required = true),
       Param("interval_ms", "integer", "Gap between the first tap's release and the second tap (default 100, 40-250)"),
     ),
-    // Same class, tier and rate class as ui.tap_coordinates: one screen action (docs/security.md §2.3a).
+    // Same class, tier and rate class as ui.tap_coordinates: one screen action (docs/security.md#limits).
     actionClass = ActionClass.DEVICE_MUTATION, tier = 2, rateClass = RateClass.MUTATION,
   ) { args, _ ->
     val svc = SymbiosisAccessibilityService.current

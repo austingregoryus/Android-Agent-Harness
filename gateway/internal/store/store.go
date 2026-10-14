@@ -93,6 +93,14 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("store: create directory for %s: %w", path, err)
 		}
 	}
+	if path != ":memory:" {
+		// The database holds SMS text and transcripts. Create it owner-only
+		// before SQLite does (which would honour the umask, commonly leaving it
+		// world-readable), and tighten one that already exists.
+		if err := createPrivate(path); err != nil {
+			return nil, err
+		}
+	}
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
@@ -104,12 +112,40 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("store: apply schema: %w", err)
 	}
+	if path != ":memory:" {
+		// The schema write has created the -wal and -shm sidecars. On Unix
+		// SQLite gives them the main file's mode already; restricting them here
+		// covers an older database and Windows, where they inherit the
+		// directory ACL. The one connection stays open, so they persist.
+		for _, sidecar := range []string{path + "-wal", path + "-shm"} {
+			if err := restrictFile(sidecar); err != nil {
+				db.Close()
+				return nil, fmt.Errorf("store: restrict %s: %w", sidecar, err)
+			}
+		}
+	}
 	s := &Store{db: db}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&s.eventCount); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("store: count events: %w", err)
 	}
 	return s, nil
+}
+
+// createPrivate creates path with owner-only permissions if it does not exist,
+// and restricts it either way.
+func createPrivate(path string) error {
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("store: create %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("store: create %s: %w", path, err)
+	}
+	if err := restrictFile(path); err != nil {
+		return fmt.Errorf("store: restrict %s: %w", path, err)
+	}
+	return nil
 }
 
 // Close releases the database handle.
@@ -257,15 +293,33 @@ func (s *Store) LoadSubscription(key string) (string, int64, error) {
 }
 
 // SaveSubscription implements device.CursorStore.
+//
+// For the same subscription id the cursor only moves forward, so a late ack
+// from an old socket cannot rewind progress. A different subscription id is a
+// new phone-side subscription, and its cursor replaces the old one outright:
+// keeping the larger value would make the gateway drop the new subscription's
+// events as duplicates after a phone journal reset.
 func (s *Store) SaveSubscription(key, subscriptionID string, ackCursor int64) error {
 	_, err := s.db.Exec(`
 INSERT INTO subscriptions (sub_key, subscription_id, ack_cursor, updated_at) VALUES (?, ?, ?, ?)
-ON CONFLICT(sub_key) DO UPDATE SET subscription_id = excluded.subscription_id,
-                                   ack_cursor = MAX(subscriptions.ack_cursor, excluded.ack_cursor),
+ON CONFLICT(sub_key) DO UPDATE SET ack_cursor = CASE
+                                     WHEN subscriptions.subscription_id = excluded.subscription_id
+                                     THEN MAX(subscriptions.ack_cursor, excluded.ack_cursor)
+                                     ELSE excluded.ack_cursor END,
+                                   subscription_id = excluded.subscription_id,
                                    updated_at = excluded.updated_at`,
 		key, subscriptionID, ackCursor, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("store: save subscription: %w", err)
+	}
+	return nil
+}
+
+// DeleteSubscription implements device.CursorStore. Deleting a missing key is
+// not an error.
+func (s *Store) DeleteSubscription(key string) error {
+	if _, err := s.db.Exec(`DELETE FROM subscriptions WHERE sub_key = ?`, key); err != nil {
+		return fmt.Errorf("store: delete subscription: %w", err)
 	}
 	return nil
 }

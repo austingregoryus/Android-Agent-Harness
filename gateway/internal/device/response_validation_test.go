@@ -3,6 +3,7 @@ package device
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -50,6 +51,12 @@ func TestCallToolRequiresConfirmedRPCResult(t *testing.T) {
 			out, err := c.CallTool(context.Background(), "messaging.send_sms", nil, CallToolOptions{})
 			if err == nil || out.OK {
 				t.Fatalf("unconfirmed result accepted: outcome=%+v err=%v", out, err)
+			}
+			// The phone answered, so it may have acted: the outcome is unknown,
+			// not a call that never left the gateway.
+			var ce *CallError
+			if !errors.As(err, &ce) || ce.Kind != CallOutcomeUnknown {
+				t.Errorf("error = %v, want a CallOutcomeUnknown *CallError", err)
 			}
 		})
 	}

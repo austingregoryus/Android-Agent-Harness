@@ -3,8 +3,8 @@
 Verify the general-purpose MCP surface against the REAL phone over the LAN and print a table.
 
     python tools/verify_device.py                # everything read-only, plus a calendar/file round trip
-    python tools/verify_device.py --sms +1...    # also send one SMS (needs approval or an allowlisted number)
-    python tools/verify_device.py --md docs/verification-2026-09-18.md   # append the table to a markdown file
+    python tools/verify_device.py --sms +1...    # also send one SMS (subject to the phone's policy: approval, allowlist, rate limits)
+    python tools/verify_device.py --md logs/verification.md   # append the table to a markdown file
     python tools/verify_device.py --device oneplus   # another phone: reads secrets/devices/oneplus/
 
 Reads secrets/device-url, device-token, device-tls-fingerprint (the admin token, all scopes), or the same three
@@ -86,7 +86,7 @@ def main() -> None:
     rt.init()
     c = Check(rt)
 
-    _, body = rt._post({"jsonrpc": "2.0", "id": 9, "method": "tools/list", "params": {}}, rt.session)
+    body = rt.request("tools/list", {}, 9)
     tools = sorted(t["name"] for t in body["result"]["tools"])
     fam: dict = {}
     for t in tools:
@@ -158,8 +158,7 @@ def main() -> None:
     # without a tap by default, so the old probe - send a text and expect it to be stopped - would now SEND it.
     PROBE_NUMBER = "+15550100000"
     t0 = time.time()
-    _, body = rt._post({"jsonrpc": "2.0", "id": 9, "method": "resources/read",
-                        "params": {"uri": "phone://policy"}}, rt.session)
+    body = rt.request("resources/read", {"uri": "phone://policy"}, 9)
     sms_needs_approval = False  # safe default: skip the probe when the policy can't be read at all
     try:
         pol = json.loads(body["result"]["contents"][0]["text"])

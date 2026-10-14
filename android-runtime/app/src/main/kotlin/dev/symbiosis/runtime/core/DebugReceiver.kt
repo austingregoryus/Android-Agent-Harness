@@ -9,7 +9,8 @@ import dev.symbiosis.runtime.policy.ActionClass
 
 /**
  * DEBUG builds only (no-op in release): lets an emulator verification script drive flows that
- * normally need a tap on the screen.
+ * normally need a tap on the screen. Exported behind android.permission.DUMP (src/debug/AndroidManifest.xml),
+ * so only the adb shell can send these; an installed app cannot.
  *
  *   adb shell am broadcast -n dev.symbiosis.runtime/.core.DebugReceiver -a dev.symbiosis.DEBUG_PAIR --es access standard|full
  *     → logs "SYMBIOSIS_PAIRING_CODE=XXXX-XXXX" (redeem it with POST /pair, exactly like a real agent)

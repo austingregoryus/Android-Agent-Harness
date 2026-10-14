@@ -53,8 +53,9 @@ def api_key_for(base: str):
 
 def drive(label: str, task: str, far_turns: list, brain_name: str = "luna") -> None:
     base, model, reasoning = C.BRAINS[brain_name]
-    brain = C.Brain(base, model, reasoning, C.rules_for(model), api_key_for(base),
-                    trust_tools=not C.is_small_model(model))
+    # "off" means omit reasoning_effort; Brain wants None for that (converse.py maps it the same way).
+    brain = C.Brain(base, model, None if reasoning == "off" else reasoning, C.rules_for(model),
+                    api_key_for(base), trust_tools=not C.is_small_model(model))
     respond = C._local_responder(task + C.PHONE_RULES, brain, None, 8.0)
     history: list = []
     hung_up = False

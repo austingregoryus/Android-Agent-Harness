@@ -48,9 +48,11 @@ class EventBroker(private val db: Db, private val deviceId: String) {
     return ev
   }
 
-  fun lastId(): Long = db.readableDatabase.compileStatement("SELECT COALESCE(MAX(id), 0) FROM events").simpleQueryForLong()
-  fun earliestId(): Long = db.readableDatabase.compileStatement("SELECT COALESCE(MIN(id), 0) FROM events").simpleQueryForLong()
-  fun count(): Long = db.readableDatabase.compileStatement("SELECT COUNT(*) FROM events").simpleQueryForLong()
+  // Each statement is closed after use: these run per subscribe/replay/status call and leaked one native statement each.
+  fun lastId(): Long = scalar("SELECT COALESCE(MAX(id), 0) FROM events")
+  fun earliestId(): Long = scalar("SELECT COALESCE(MIN(id), 0) FROM events")
+  fun count(): Long = scalar("SELECT COUNT(*) FROM events")
+  private fun scalar(sql: String): Long = db.readableDatabase.compileStatement(sql).use { it.simpleQueryForLong() }
 
   /** Events with id > sinceId, ascending, up to limit+1 so the caller can detect "more". */
   fun after(sinceId: Long, limit: Int): List<Event> = db.readableDatabase.query(

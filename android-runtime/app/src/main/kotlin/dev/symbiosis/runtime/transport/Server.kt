@@ -8,6 +8,7 @@ import dev.symbiosis.runtime.events.Event
 import dev.symbiosis.runtime.events.FilterClause
 import dev.symbiosis.runtime.events.Subscription
 import dev.symbiosis.runtime.policy.ActionClass
+import dev.symbiosis.runtime.sessions.SessionFrameCursor
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
@@ -47,6 +48,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
@@ -91,6 +93,9 @@ class Server(private val runtime: Runtime, private val host: String, private val
   /** One /ws/sessions/{id} connection, tracked so revocation and emergency stop can close it. */
   private class SessionSocket(val peerId: String, val ws: DefaultWebSocketServerSession)
   private val sessionSockets = ConcurrentHashMap<Long, SessionSocket>()
+
+  /** Owner of a session named in an event payload, for [Principal.canSeeEvent]. */
+  private val sessionOwner: (String) -> String? = { runtime.sessions.ownerOf(it) }
 
   init {
     runtime.subscriptions.onReplayed = { peerId, subId -> eventSockets.values.filter { it.principal.peerId == peerId }.forEach { it.gaps.remove(subId) } }
@@ -259,10 +264,19 @@ class Server(private val runtime: Runtime, private val host: String, private val
         // cannot leave a phantom socket behind (the driver lease would read it as the driver still being there).
         try {
           val since = call.request.queryParameters["since_seq"]?.toLongOrNull() ?: 0
-          val (frames, more) = runtime.sessions.framesAfter(id, since)
-          for (f in frames) send(Json.lenient.encodeToString(JsonElement.serializer(), f))
-          if (more) send(Json.lenient.encodeToString(JsonElement.serializer(), buildJsonObject { put("session_id", id); put("type", "gap"); put("from_seq", (frames.lastOrNull()?.get("seq")?.jsonPrimitive?.longOrNull ?: since) + 1); put("hint", "reconnect with since_seq to continue") }))
-          job = launch { runtime.sessions.frames.collect { f -> if (f.sessionId == id) runCatching { send(Json.lenient.encodeToString(JsonElement.serializer(), f.toJson())) } } }
+          // Subscribe to live frames BEFORE reading the backlog (onSubscription runs once the collector is
+          // registered), and let the cursor de-duplicate by seq: reading the backlog first lost every frame emitted
+          // in between. The cursor also refills frames this collector missed because it was slow (the flow drops a
+          // slow collector's oldest frames rather than stalling every socket) and sends `gap` when it cannot.
+          val cursor = SessionFrameCursor(id, since, { after, limit -> runtime.sessions.framesAfter(id, after, limit) }, { runtime.sessions.headSeq(id) })
+          suspend fun sendAll(frames: List<JsonObject>) { for (f in frames) send(Json.lenient.encodeToString(JsonElement.serializer(), f)) }
+          job = launch {
+            runCatching {
+              runtime.sessions.frames
+                .onSubscription { sendAll(cursor.backlog()) }
+                .collect { f -> if (f.sessionId == id) sendAll(cursor.live(f)) }
+            }
+          }
           for (frame in incoming) {
             if (frame !is Frame.Text) continue
             val msg = runCatching { Json.lenient.parseToJsonElement(frame.readText()) as JsonObject }.getOrNull() ?: continue
@@ -303,13 +317,15 @@ class Server(private val runtime: Runtime, private val host: String, private val
     var encoded: JsonElement? = null
     val version = runtime.subscriptions.version
     for (sock in eventSockets.values) {
-      if (!sock.principal.canSeeTopic(ev.topic)) continue
+      if (!sock.principal.canSeeEvent(ev, sessionOwner)) continue
       if (sock.subsVersion != version) { sock.subs = runtime.subscriptions.listFor(sock.principal.peerId); sock.subsVersion = version }
       for (sub in sock.subs) {
         if (sub.delivery == "queue") continue // replay-only by contract (protocol.md §4.3)
         if (sub.expired() || !sub.matches(ev)) continue
         val sid = sub.subscription_id
-        if (sock.gaps.containsKey(sid)) { sock.gaps[sid]!![1] = ev.id; continue } // paused until the client replays
+        // Paused until the client replays. One lookup: replay can remove the gap between a containsKey and a get.
+        val paused = sock.gaps[sid]
+        if (paused != null) { paused[1] = ev.id; continue }
         if (encoded == null) encoded = Json.lenient.encodeToJsonElement(Event.serializer(), ev)
         val frame = buildJsonObject { put("type", "event"); put("subscription_id", sid); put("event", encoded) }
         if (!sock.outbound.trySend(frame).isSuccess) {
@@ -389,7 +405,7 @@ class Server(private val runtime: Runtime, private val host: String, private val
         val sid = msg["subscription_id"]?.jsonPrimitive?.contentOrNull ?: return reply(err("invalid_params", "subscription_id is required"))
         val sub = runtime.subscriptions.get(principal.peerId, sid) ?: return reply(err("subscription.unknown", sid))
         val since = msg["since_id"]?.jsonPrimitive?.longOrNull ?: sub.ack_cursor
-        val r = runtime.subscriptions.replay(sub, since, (msg["limit"]?.jsonPrimitive?.longOrNull ?: 200L).toInt()) { principal.canSeeTopic(it.topic) }
+        val r = runtime.subscriptions.replay(sub, since, (msg["limit"]?.jsonPrimitive?.longOrNull ?: 200L).toInt()) { principal.canSeeEvent(it, sessionOwner) }
         sock.gaps.remove(sid) // live push resumes after a replay
         reply(
           buildJsonObject {

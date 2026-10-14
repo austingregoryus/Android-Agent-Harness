@@ -1,5 +1,7 @@
 package dev.symbiosis.runtime.capabilities
 
+import dev.symbiosis.runtime.events.Event
+import dev.symbiosis.runtime.events.sessionIdOrNull
 import dev.symbiosis.runtime.policy.ActionClass
 import java.util.concurrent.ConcurrentHashMap
 
@@ -87,6 +89,22 @@ data class Principal(
   /** Whether this peer's scopes and action ceiling permit the data in [topic]. */
   fun canSeeTopic(topic: String): Boolean = isAdmin ||
     (hasScope(Scopes.requiredScopeForTopic(topic)) && Scopes.requiredActionClassForTopic(topic) <= maxActionClass)
+
+  /**
+   * [canSeeTopic] plus session ownership. The one check every event delivery path uses: WebSocket push, replay (WS
+   * and events.replay), events.wait, workflow triggers and phone://events/recent. An event whose payload names a
+   * `session_id` (call.transcript, call.listening, session.state, a call's connected/ended...) belongs to that
+   * session: only its owning peer or the admin sees it, the rule /ws/sessions/{id} and telephony.get_session
+   * already enforce. A topic scope alone used to be enough, so any peer holding telephony.* could subscribe to
+   * call.* and read the live transcript of another peer's call. [sessionOwner] maps a session id to its owning
+   * peer; null (an unknown id, or a session with no owner) makes the event admin-only.
+   */
+  fun canSeeEvent(ev: Event, sessionOwner: (String) -> String?): Boolean {
+    if (!canSeeTopic(ev.topic)) return false
+    if (isAdmin) return true
+    val sid = ev.sessionIdOrNull() ?: return true
+    return sessionOwner(sid) == peerId
+  }
 
   /** Every namespace and data class reachable through [glob] must be authorized. */
   fun canSubscribe(glob: String): Boolean = isAdmin ||

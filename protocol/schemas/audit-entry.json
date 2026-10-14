@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/austingregoryus/Android-Agent-Harness/main/protocol/schemas/audit-entry.json",
   "title": "AuditEntry",
-  "description": "A row of the append-only audit_entries table (docs/protocol.md section 7), enforced by SQLite triggers (BEFORE UPDATE / BEFORE DELETE ... RAISE(ABORT)) and a hash chain: entry_hash = sha256(prev_hash || canonical_json(all fields except entry_hash)). The chain seed is a random 32-byte value generated on first run and kept in Keystore-backed storage. phone://audit/recent returns the last 100 rows. Redaction: values for keys named text, body, or message are kept; keys matching token|secret|password|key are replaced with the string \"[redacted]\". Not every field is populated for every kind (e.g. duration_ms and result_json are meaningless before a tool.outcome row exists) so those columns are nullable rather than omitted, matching a real SQL row where the column always exists.",
+  "description": "A row of the audit_entries table (docs/protocol.md section 7), append-only apart from anchored retention pruning, enforced by SQLite triggers (BEFORE UPDATE / BEFORE DELETE ... RAISE(ABORT)) and a hash chain: entry_hash = sha256(prev_hash || canonical_json(all fields except entry_hash)). The chain seed is a random 32-byte value generated on first run and kept in Keystore-backed storage. phone://audit/recent returns the last 100 rows. Redaction: values for keys named text, body, or message are kept; keys matching token|secret|password|api[_-]?key|authorization (case-insensitive) are replaced with the string \"[redacted]\". Not every field is populated for every kind (e.g. duration_ms and result_json are meaningless before a tool.outcome row exists) so those columns are nullable rather than omitted, matching a real SQL row where the column always exists.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -39,7 +39,8 @@
         "approval",
         "event.emitted",
         "session.transition",
-        "admin"
+        "admin",
+        "workflow.run"
       ]
     },
     "capability": {
@@ -49,12 +50,12 @@
     "action_class": {
       "anyOf": [
         { "type": "null" },
-        { "type": "string", "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"] }
+        { "type": "string", "enum": ["READ_ONLY", "AUTOMATION", "SENSITIVE_READ", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"] }
       ]
     },
     "args_json": {
       "type": ["object", "null"],
-      "description": "Redacted call arguments. text/body/message keys are kept; token|secret|password|key-matching keys become \"[redacted]\".",
+      "description": "Redacted call arguments. text/body/message keys are kept; keys matching token|secret|password|api[_-]?key|authorization (case-insensitive) become \"[redacted]\".",
       "additionalProperties": true
     },
     "result_json": {

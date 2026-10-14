@@ -736,7 +736,7 @@ def scenario_idle_nudge():
 def scenario_outcome_parsing():
     """
     The structured result a calling agent reads. The model is mocked: what is under test is the parsing and
-    the guarantees around it, not the brain's judgment (that is measured by hand in docs/brain-options.md).
+    the guarantees around it, not the brain's judgment (that is measured by hand with tools/judgement_eval.py).
 
     Every reply below is one a real model has actually produced: a fenced block, prose around the object, an
     outcome word that is not in the enum, a half-filled object, and a hard failure.
@@ -1433,6 +1433,20 @@ def scenario_system_file():
     print("ok  system-file          ")
 
 
+def scenario_outcome_sees_end_reason():
+    """The outcome pass is told how the call ended ("remote_hangup"), not "The call ended: True"."""
+    seen: list = []
+    saved = converse.summarize_outcome
+    converse.summarize_outcome = lambda brain, task, history, ended="", **kw: seen.append(ended)  # type: ignore
+    try:
+        script = hello_then("What time") + [(3.0, ev("call.ended", outcome="remote_hangup", duration_ms=9000))]
+        _, _, log = simulate(script, {"what time": ["Seven."]}, outcome_brain=object(), task="Ask the time.")
+    finally:
+        converse.summarize_outcome = saved   # type: ignore[assignment]
+    check(seen == ["remote_hangup"], f"summarize_outcome got the end reason: {seen}", log)
+    print("ok  outcome-end-reason      ")
+
+
 SCENARIOS = (
     scenario_preempt_match, scenario_preempt_mismatch, scenario_filler_when_slow,
     scenario_false_interruption, scenario_backchannel_interruption, scenario_uhhuh_mid_reply_ignored,
@@ -1443,7 +1457,7 @@ SCENARIOS = (
     scenario_whisper_confirms, scenario_whisper_corrects, scenario_whisper_withdraws_noise,
     scenario_whisper_first, scenario_whisper_unavailable, scenario_whisper_unsure_keeps_phone,
     scenario_opening_not_truncated,
-    scenario_idle_nudge, scenario_outcome_parsing,
+    scenario_idle_nudge, scenario_outcome_parsing, scenario_outcome_sees_end_reason,
     scenario_never_hang_up_in_silence, scenario_early_bare_hangup_stays_quiet,
     scenario_late_question_cancels_hangup, scenario_farewell_does_not_cancel_hangup,
     scenario_no_nudge_while_thinking, scenario_afternoon_goodbye_hangs_up,

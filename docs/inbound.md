@@ -20,6 +20,8 @@ Default tools read calendars, contacts, messages, call history, battery/network 
 
 Optional `secrets/inbound-passphrase` enables calendar writes and third-party SMS for one message. It crosses the carrier in plaintext. The driver strips it before logging/model input; passphrase-only messages are discarded. Configure phone approvals as an additional boundary.
 
+Third-party SMS is limited to recipients the owner chose. With the passphrase, the responder refuses a `messaging.send_sms` whose `to` number does not appear in the owner's own message (matched like the inbound allowlist) and is not on the outbound allowlist, and tells the model why. Numbers found by a read tool, including contacts, are not enough: write the number in the text, or add it to ignored `secrets/inbound-send-allowlist` (same format as `secrets/inbound-allowlist`) or pass `--allow-send-to NUMBER` (repeatable). The outbound allowlist is empty by default. Read results (other people's texts, contacts, calendar entries) are passed to the model marked as untrusted data rather than instructions; that marking reduces, but does not remove, the risk that planted text steers the model.
+
 ```sh
 python tools/inbound.py --dry-run
 python tools/inbound.py

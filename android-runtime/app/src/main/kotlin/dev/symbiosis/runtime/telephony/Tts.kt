@@ -92,30 +92,54 @@ object Tts {
   }
 }
 
-/** Minimal RIFF/WAVE reader — enough for what the TTS engine writes. */
+/** Minimal RIFF/WAVE reader: enough for what the TTS engine writes, and safe on what a caller sends (play_audio). */
 object Wav {
   data class Decoded(val pcm: ShortArray, val sourceRate: Int)
 
+  /** Sample rates accepted from a WAV header or a caller (raw PCM): telephony narrowband through 48 kHz. */
+  val RATES = 8_000..48_000
+
+  /**
+   * Longest audio accepted, after resampling. Bounds memory and how long one call can hold the uplink: a header
+   * claiming 1 Hz turned a small upload into an hours-long, gigabyte-sized resample.
+   */
+  const val MAX_SECONDS = 300
+
   /** Decode to mono 16-bit and resample to [targetRate]. */
-  fun decodeMono16(f: File, targetRate: Int): Decoded? = runCatching {
-    val b = f.readBytes()
+  fun decodeMono16(f: File, targetRate: Int): Decoded? = runCatching { decodeMono16(f.readBytes(), targetRate) }.getOrNull()
+
+  /**
+   * [b] as mono 16-bit at [targetRate], or null if it is not a 16-bit PCM WAV with a rate in [RATES] and at most
+   * [MAX_SECONDS] long. Chunk sizes are unsigned 32-bit and are checked against the bytes actually present: read
+   * as a signed Int, a size of 0xFFFFFFF8 stepped the walk back to where it started and looped forever.
+   */
+  fun decodeMono16(b: ByteArray, targetRate: Int): Decoded? = runCatching {
     if (b.size < 44) return null
-    var i = 12
-    var rate = targetRate; var channels = 1; var bits = 16
+    if (String(b, 0, 4, Charsets.US_ASCII) != "RIFF" || String(b, 8, 4, Charsets.US_ASCII) != "WAVE") return null
+    var i = 12L
+    var rate = -1; var channels = 0; var bits = 0
     var dataOff = -1; var dataLen = 0
     while (i + 8 <= b.size) {
-      val id = String(b, i, 4, Charsets.US_ASCII)
-      val size = le32(b, i + 4)
+      val at = i.toInt()
+      val id = String(b, at, 4, Charsets.US_ASCII)
+      val size = le32u(b, at + 4)
+      val remaining = b.size - (i + 8)
       when (id) {
-        "fmt " -> { channels = le16(b, i + 10); rate = le32(b, i + 12); bits = le16(b, i + 22) }
-        "data" -> { dataOff = i + 8; dataLen = minOf(size, b.size - dataOff) }
+        "fmt " -> {
+          if (size < 16 || size > remaining) return null
+          channels = le16(b, at + 10); rate = le32(b, at + 12); bits = le16(b, at + 22)
+        }
+        // A streaming writer may leave the data size at 0xFFFFFFFF; what is present is what plays.
+        "data" -> { dataOff = at + 8; dataLen = minOf(size, remaining).toInt() }
+        else -> if (size > remaining) return null
       }
       if (dataOff >= 0) break
-      i += 8 + size + (size and 1)
+      i += 8 + size + (size and 1) // Long: always advances, and past the end ends the walk
     }
-    if (dataOff < 0 || bits != 16 || channels < 1) return null
+    if (dataOff < 0 || bits != 16 || channels < 1 || rate !in RATES) return null
     val frames = dataLen / 2 / channels
     if (frames <= 0) return null
+    if (frames.toLong() > MAX_SECONDS.toLong() * rate) return null
     val mono = ShortArray(frames)
     for (n in 0 until frames) { // channel 0
       val p = dataOff + n * 2 * channels
@@ -139,6 +163,8 @@ object Wav {
   }
 
   fun le16(b: ByteArray, i: Int) = (b[i].toInt() and 0xff) or ((b[i + 1].toInt() and 0xff) shl 8)
+  /** Unsigned little-endian 32-bit, for RIFF chunk sizes. */
+  fun le32u(b: ByteArray, i: Int): Long = le32(b, i).toLong() and 0xffff_ffffL
   fun le32(b: ByteArray, i: Int) =
     (b[i].toInt() and 0xff) or ((b[i + 1].toInt() and 0xff) shl 8) or
       ((b[i + 2].toInt() and 0xff) shl 16) or ((b[i + 3].toInt() and 0xff) shl 24)

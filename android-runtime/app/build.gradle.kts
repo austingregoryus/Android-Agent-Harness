@@ -92,7 +92,7 @@ dependencies {
 
   // Capability substrate (Apache-2.0). Consumed behind CapabilityAdapter.
   // io.ktor is excluded from every droid-mcp artifact: droid-mcp-core pulls Ktor Netty at runtime scope
-  // and we never start its HttpTransport. Our own Ktor CIO deps above satisfy droid-mcp-core's compile refs.
+  // and we never start its HttpTransport. Our own Ktor Netty deps above satisfy droid-mcp-core's compile refs.
   listOf(
     "droid-mcp-core", "droid-mcp-sms", "droid-mcp-telephony", "droid-mcp-calllog", "droid-mcp-contacts",
     "droid-mcp-device", "droid-mcp-network", "droid-mcp-apps", "droid-mcp-intent", "droid-mcp-location",

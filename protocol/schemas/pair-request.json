@@ -23,7 +23,7 @@
     },
     "max_action_class": {
       "type": "string",
-      "enum": ["READ_ONLY", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"],
+      "enum": ["READ_ONLY", "AUTOMATION", "SENSITIVE_READ", "LOW_RISK", "COMMUNICATION", "EXTERNAL_COMMITMENT", "DEVICE_MUTATION", "DESTRUCTIVE"],
       "description": "Requested ceiling; clamped server-side to the code's minted ceiling."
     }
   },

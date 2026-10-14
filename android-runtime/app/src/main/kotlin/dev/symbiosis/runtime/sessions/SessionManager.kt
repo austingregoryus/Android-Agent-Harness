@@ -46,8 +46,22 @@ data class SessionFrame(val sessionId: String, val seq: Long, val ts: Long, val 
  */
 class SessionManager(private val db: Db) {
   private val seqs = ConcurrentHashMap<String, Long>()
-  private val _frames = MutableSharedFlow<SessionFrame>(extraBufferCapacity = 512)
+  /**
+   * Live fan-out. DROP_OLDEST, not the default SUSPEND: with SUSPEND, one /ws/sessions socket that stopped reading
+   * filled the 512-frame buffer, `tryEmit` then failed, and the frame reached NO live socket, for every session.
+   * Now only the slow collector loses its oldest buffered frames. Every frame is persisted before it is published
+   * and `seq` is contiguous per session, so a socket sees the hole and refills it from session_messages
+   * ([SessionFrameCursor]).
+   */
+  private val _frames = MutableSharedFlow<SessionFrame>(extraBufferCapacity = 512, onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
   val frames: SharedFlow<SessionFrame> = _frames
+
+  /**
+   * session_id to owning peer id ("" for a session with no owner). The owner never changes after create, and
+   * session rows are never deleted (pruneFrames drops only their frames), so this is a cache of durable data: an
+   * ended session's events stay resolvable to their owner for as long as the journal keeps them.
+   */
+  private val owners = ConcurrentHashMap<String, String>()
 
   /** Hooks set by the runtime: audit + `session.state` events. */
   var onTransition: ((Session, SessionState, SessionState) -> Unit)? = null
@@ -64,8 +78,18 @@ class SessionManager(private val db: Db) {
       },
     )
     seqs[s.sessionId] = 0
+    owners[s.sessionId] = peerId ?: ""
     emitFrame(s.sessionId, correlationId, "session.state", buildJsonObject { put("state", s.state.name); put("previous_state", JsonPrimitive(null as String?)); put("kind", kind) })
     return s
+  }
+
+  /** The peer that owns session [id], or null when the session is unknown or has no owner (admin-only). */
+  fun ownerOf(id: String): String? {
+    val cached = owners[id] ?: get(id)?.let { s ->
+      if (owners.size >= MAX_CACHED_OWNERS) owners.clear()
+      (s.peerId ?: "").also { owners[id] = it }
+    }
+    return cached?.takeIf { it.isNotEmpty() }
   }
 
   fun get(id: String): Session? = db.readableDatabase.query("sessions", null, "session_id = ?", arrayOf(id), null, null, null).use { c -> if (c.moveToFirst()) row(c) else null }
@@ -124,9 +148,12 @@ class SessionManager(private val db: Db) {
         put("frame_json", Json.lenient.encodeToString(JsonObject.serializer(), f.toJson()))
       },
     )
-    if (!_frames.tryEmit(f)) android.util.Log.w("SessionManager", "session frame buffer overflow: dropped live seq=$seq for $sessionId (persisted; clients replay with since_seq)")
+    _frames.tryEmit(f) // never fails with DROP_OLDEST; a collector that fell behind refills from session_messages
     f
   }
+
+  /** The highest seq assigned on [sessionId] so far (0 before its first frame). */
+  fun headSeq(sessionId: String): Long = synchronized(seqs) { seqs[sessionId] ?: lastSeq(sessionId) }
 
   /** Frames after [sinceSeq]; `second` is true when more remain beyond [limit] (the caller should send a gap). */
   fun framesAfter(sessionId: String, sinceSeq: Long, limit: Int = 500): Pair<List<JsonObject>, Boolean> = db.readableDatabase.query(
@@ -149,6 +176,8 @@ class SessionManager(private val db: Db) {
     put("correlation_id", s.correlationId); put("created_at", s.createdAt); put("updated_at", s.updatedAt); put("ended_at", s.endedAt)
     put("meta", s.meta); put("summary", s.summary ?: JsonPrimitive(null as String?))
   }
+
+  companion object { private const val MAX_CACHED_OWNERS = 10_000 }
 
   private fun row(c: android.database.Cursor) = Session(
     sessionId = c.getString(c.getColumnIndexOrThrow("session_id")),

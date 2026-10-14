@@ -120,11 +120,33 @@ type Phone struct {
 	// so a test can prove a denied subscription is not retried on reconnect.
 	deniedSubscribeAttempts int
 
+	// legacy makes the event channel behave like an older runtime: no hello
+	// frame and no ref echoed on replies.
+	legacy bool
+	// replayScript holds the scripted outcomes for the next replay requests,
+	// consumed one per request; once empty, replays are answered normally.
+	replayScript []ReplayAction
+
 	// reqMu guards reqCount, tracked independently of mu so counting a request
 	// never contends with the protocol-state lock.
 	reqMu    sync.Mutex
 	reqCount int
 }
+
+// ReplayAction scripts how the fake answers one replay request.
+type ReplayAction int
+
+// Replay actions.
+const (
+	// ReplayDrop sends no reply at all, so the client's request times out.
+	ReplayDrop ReplayAction = iota + 1
+	// ReplayError answers with an error frame (ref echoed, as the runtime
+	// does for subscription.unknown).
+	ReplayError
+	// ReplayWrongSubscription answers with an empty replay_result naming a
+	// different subscription.
+	ReplayWrongSubscription
+)
 
 // deniedSubscribe is the error frame content for a denied topic glob.
 type deniedSubscribe struct {
@@ -160,6 +182,9 @@ type Options struct {
 	// POST /pair as tls_fingerprint_sha256, matching the phone's real TLS-only
 	// connector.
 	TLS bool
+	// Legacy makes /ws/events behave like an older runtime: no hello frame on
+	// connect and no "ref" echoed on replies.
+	Legacy bool
 }
 
 // New starts a fake runtime. Call Close when done.
@@ -173,6 +198,7 @@ func New(opts Options) *Phone {
 		requireAuth:      opts.Token != "",
 		unhealthy:        opts.Unhealthy,
 		tls:              opts.TLS,
+		legacy:           opts.Legacy,
 		idempotency:      map[string]map[string]map[string]any{},
 		deniedSubscribes: map[string]deniedSubscribe{},
 	}
@@ -694,6 +720,16 @@ func (p *Phone) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 	p.mu.Lock()
 	p.conns[conn] = struct{}{}
+	// Like the runtime, hello is the first frame, sent before any client frame
+	// is read: the newest journal id and the peer's subscriptions.
+	var hello map[string]any
+	if !p.legacy {
+		ids := make([]any, 0, len(p.subs))
+		for id := range p.subs {
+			ids = append(ids, id)
+		}
+		hello = map[string]any{"type": "hello", "peer_id": "peer_abcdef012345", "last_event_id": p.nextID, "subscriptions": ids}
+	}
 	p.mu.Unlock()
 	defer func() {
 		p.mu.Lock()
@@ -703,6 +739,9 @@ func (p *Phone) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	ctx := r.Context()
+	if hello != nil {
+		p.writeFrame(ctx, conn, hello)
+	}
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -719,9 +758,18 @@ func (p *Phone) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 func (p *Phone) handleEventFrame(ctx context.Context, conn *websocket.Conn, frame map[string]any) {
 	typ, _ := frame["type"].(string)
+	// reply echoes the request's ref, as the runtime's Server.kt does for every
+	// reply, error replies included.
+	ref, hasRef := frame["ref"]
+	reply := func(out map[string]any) {
+		if hasRef && !p.legacy {
+			out["ref"] = ref
+		}
+		p.writeFrame(ctx, conn, out)
+	}
 	switch typ {
 	case "ping":
-		p.writeFrame(ctx, conn, map[string]any{"type": "pong"})
+		reply(map[string]any{"type": "pong"})
 
 	case "list":
 		p.mu.Lock()
@@ -736,7 +784,7 @@ func (p *Phone) handleEventFrame(ctx context.Context, conn *websocket.Conn, fram
 			})
 		}
 		p.mu.Unlock()
-		p.writeFrame(ctx, conn, map[string]any{"type": "subscriptions", "subscriptions": list})
+		reply(map[string]any{"type": "subscriptions", "subscriptions": list})
 
 	case "subscribe":
 		glob, _ := frame["topic_glob"].(string)
@@ -745,7 +793,7 @@ func (p *Phone) handleEventFrame(ctx context.Context, conn *websocket.Conn, fram
 		if deny, ok := p.deniedSubscribes[glob]; ok {
 			p.deniedSubscribeAttempts++
 			p.mu.Unlock()
-			p.writeFrame(ctx, conn, map[string]any{"type": "error", "code": deny.code, "message": deny.message})
+			reply(map[string]any{"type": "error", "code": deny.code, "message": deny.message})
 			return
 		}
 		p.nextSb++
@@ -757,7 +805,7 @@ func (p *Phone) handleEventFrame(ctx context.Context, conn *websocket.Conn, fram
 		}
 		p.subs[sub.ID] = sub
 		p.mu.Unlock()
-		p.writeFrame(ctx, conn, map[string]any{
+		reply(map[string]any{
 			"type": "subscribed", "subscription_id": sub.ID, "created_at_event_id": sub.CreatedAtEventID,
 		})
 
@@ -766,7 +814,7 @@ func (p *Phone) handleEventFrame(ctx context.Context, conn *websocket.Conn, fram
 		p.mu.Lock()
 		delete(p.subs, id)
 		p.mu.Unlock()
-		p.writeFrame(ctx, conn, map[string]any{"type": "unsubscribed", "subscription_id": id})
+		reply(map[string]any{"type": "unsubscribed", "subscription_id": id})
 
 	case "ack":
 		id, _ := frame["subscription_id"].(string)
@@ -788,10 +836,31 @@ func (p *Phone) handleEventFrame(ctx context.Context, conn *websocket.Conn, fram
 			limit = 1000
 		}
 		p.mu.Lock()
+		var action ReplayAction
+		if len(p.replayScript) > 0 {
+			action = p.replayScript[0]
+			p.replayScript = p.replayScript[1:]
+		}
+		switch action {
+		case ReplayDrop:
+			p.mu.Unlock()
+			return
+		case ReplayError:
+			p.mu.Unlock()
+			reply(map[string]any{"type": "error", "code": "internal", "message": "scripted replay failure"})
+			return
+		case ReplayWrongSubscription:
+			p.mu.Unlock()
+			reply(map[string]any{
+				"type": "replay_result", "subscription_id": "sub_ffffffffffff",
+				"events": []Event{}, "next_since_id": since, "truncated": false, "earliest_available_id": 0,
+			})
+			return
+		}
 		sub, ok := p.subs[id]
 		if !ok {
 			p.mu.Unlock()
-			p.writeFrame(ctx, conn, map[string]any{
+			reply(map[string]any{
 				"type": "error", "code": "unknown_subscription", "message": id,
 			})
 			return
@@ -830,10 +899,53 @@ func (p *Phone) handleEventFrame(ctx context.Context, conn *websocket.Conn, fram
 		if out == nil {
 			payload["events"] = []Event{}
 		}
-		p.writeFrame(ctx, conn, payload)
+		reply(payload)
 
 	default:
-		p.writeFrame(ctx, conn, map[string]any{"type": "error", "code": "unknown_frame", "message": typ})
+		reply(map[string]any{"type": "error", "code": "unknown_frame", "message": typ})
+	}
+}
+
+// ScriptReplays sets how the fake answers the next replay requests, one action
+// per request in order; after the script runs out, replays are answered
+// normally again.
+func (p *Phone) ScriptReplays(actions ...ReplayAction) {
+	p.mu.Lock()
+	p.replayScript = append([]ReplayAction(nil), actions...)
+	p.mu.Unlock()
+}
+
+// SendErrorFrame writes an unsolicited error frame, with no ref, on every live
+// event socket, the way the runtime reports a frame it could not parse.
+func (p *Phone) SendErrorFrame(code, message string) {
+	p.mu.Lock()
+	conns := make([]*websocket.Conn, 0, len(p.conns))
+	for c := range p.conns {
+		conns = append(conns, c)
+	}
+	p.mu.Unlock()
+	for _, c := range conns {
+		p.writeFrame(context.Background(), c, map[string]any{"type": "error", "code": code, "message": message})
+	}
+}
+
+// ResetJournal empties the journal and restarts event ids at 1, as when the
+// phone's event store is rebuilt. With dropSubscriptions every persisted
+// subscription is forgotten too (app data cleared); otherwise they survive with
+// their positions reset to the start of the new journal.
+func (p *Phone) ResetJournal(dropSubscriptions bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.journal = nil
+	p.nextID = 0
+	p.earliestAvailable = 0
+	if dropSubscriptions {
+		p.subs = map[string]*subscription{}
+		return
+	}
+	for _, s := range p.subs {
+		s.CreatedAtEventID = 0
+		s.AckCursor = 0
 	}
 }
 
