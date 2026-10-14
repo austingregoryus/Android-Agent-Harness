@@ -159,6 +159,14 @@ There is exactly one journal per device; subscriptions are views over it.
 | `call.barge_in` | conversation mode: the far party kept talking over the agent for `barge_in_min_ms` and playback was cut; `after_ms?, rms, ongoing?`. |
 | `call.conversation` | conversation mode stopped on the phone's side: `state:"stopped"`, `reason` = `error` (the listening loop died - no more transcripts; `error` says why) or `driver_lost` (the owning peer held no socket and made no request for 90 s, so the phone ended the call itself; `owner, idle_ms`). Only calls a peer put in conversation mode are ever ended this way. |
 
+**Session-scoped events.** An event whose payload carries a non-null `session_id` (`call.transcript`,
+`call.listening`, `session.state`, `call.connected`, `call.ended`, `call.precise_state`, ...) belongs to that
+session. Besides the topic's scope it is delivered only to the peer that owns the session, or the admin, on every
+path: live push, `replay`, `events.replay`, `events.wait`, workflow triggers and `phone://events/recent`. This is
+the same rule as `/ws/sessions/{id}` and `telephony.get_session`. Sessions are kept after they end, so ownership
+stays resolvable; an event naming an unknown session, or one with no owner, is admin-only. Events with
+`session_id: null` (the user's own calls) are gated by topic scope only.
+
 ### 4.2 Subscriptions
 
 ```
@@ -243,6 +251,12 @@ Terminal failures: BUSY, NO_ANSWER, FAILED, CANCELLED, PERMISSION_DENIED
 `telephony.end_call { session_id }`, `telephony.set_audio_route { session_id, route: speaker|earpiece }`,
 `telephony.get_session { session_id }`.
 
+`end_call`, `dial_dtmf`, the dial watchdog, the driver lease and emergency stop act only on the session's own call:
+with the runtime's InCallService bound, the Telecom call it placed (matched by number, direction and time when
+Telecom reports it). Without the InCallService, `TelecomManager.endCall` is used only when no other call existed at
+dial time and none has rung since. Otherwise the call cannot be told apart from the user's own calls, and the tool
+returns `capability.unavailable` without touching any call.
+
 ### 5.1 `/ws/sessions/{session_id}?since_seq=N`
 
 Every frame carries `session_id`, `seq` (monotonic per session, assigned by the runtime, incremented for **every**
@@ -263,6 +277,14 @@ followed by the payload.
 On reconnect with `since_seq`, the runtime replays persisted frames (`session.state`, `transcript.*`,
 `agent.*`, `session.summary`) with `seq > since_seq`; audio frames are never replayed and a `gap` is sent instead.
 `session_messages` persists every non-audio frame.
+
+**Ordering.** The socket subscribes to live frames before it reads the backlog, so nothing emitted while the
+backlog is sent is lost; frames arrive in `seq` order without duplicates. A socket that falls behind never slows
+other sockets: it misses live frames, sees the jump in `seq`, and the runtime refills the hole from
+`session_messages`. When the backlog or a hole is larger than one page (500 frames), the runtime sends
+`gap { from_seq, to_seq, hint }` instead and continues live after `to_seq`. The gap frame's own `seq` is
+`from_seq - 1` (the last frame delivered before the hole) and it is not persisted. Reconnect with
+`since_seq = from_seq - 1` to fetch the missing frames.
 
 ## 6. Policy
 

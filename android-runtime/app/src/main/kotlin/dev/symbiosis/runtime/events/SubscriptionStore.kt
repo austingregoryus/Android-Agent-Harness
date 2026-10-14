@@ -30,8 +30,13 @@ data class ReplayResult(val events: List<Event>, val nextSinceId: Long, val trun
 class SubscriptionStore(private val db: Db, private val broker: EventBroker) {
   private val filterSer = ListSerializer(FilterClause.serializer())
 
-  /** Bumped on every create/delete so live fan-out caches can refresh cheaply. */
-  @Volatile var version: Long = 0; private set
+  /**
+   * Bumped on every create/delete so live fan-out caches can refresh cheaply. Atomic: creates and deletes arrive on
+   * several threads (MCP requests, WebSocket frames, expiry pruning), and a lost `version++` left a socket serving a
+   * stale subscription list.
+   */
+  private val versionCounter = java.util.concurrent.atomic.AtomicLong(0)
+  val version: Long get() = versionCounter.get()
 
   /** Called after a replay (WS or MCP tool) so a paused live push can resume for that subscription. */
   var onReplayed: ((peerId: String, subscriptionId: String) -> Unit)? = null
@@ -67,12 +72,12 @@ class SubscriptionStore(private val db: Db, private val broker: EventBroker) {
         put("expires_at", sub.expires_at); put("ack_cursor", sub.ack_cursor)
       },
     )
-    version++
+    versionCounter.incrementAndGet()
     return sub
   }
 
-  fun delete(peerId: String, id: String): Boolean = (db.writableDatabase.delete("subscriptions", "subscription_id = ? AND peer_id = ?", arrayOf(id, peerId)) > 0).also { if (it) version++ }
-  fun deleteAllFor(peerId: String) = db.writableDatabase.delete("subscriptions", "peer_id = ?", arrayOf(peerId)).also { version++ }
+  fun delete(peerId: String, id: String): Boolean = (db.writableDatabase.delete("subscriptions", "subscription_id = ? AND peer_id = ?", arrayOf(id, peerId)) > 0).also { if (it) versionCounter.incrementAndGet() }
+  fun deleteAllFor(peerId: String) = db.writableDatabase.delete("subscriptions", "peer_id = ?", arrayOf(peerId)).also { versionCounter.incrementAndGet() }
 
   fun get(peerId: String, id: String): Subscription? = db.readableDatabase.query("subscriptions", null, "subscription_id = ? AND peer_id = ?", arrayOf(id, peerId), null, null, null)
     .use { c -> if (c.moveToFirst()) row(c) else null }?.takeUnless { it.expired() }
@@ -117,7 +122,7 @@ class SubscriptionStore(private val db: Db, private val broker: EventBroker) {
 
   private fun pruneExpired() {
     val n = db.writableDatabase.delete("subscriptions", "expires_at IS NOT NULL AND expires_at < ?", arrayOf(Ids.now().toString()))
-    if (n > 0) version++
+    if (n > 0) versionCounter.incrementAndGet()
   }
 
   companion object { const val MAX_PER_PEER = 32 }

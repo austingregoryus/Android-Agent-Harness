@@ -2,6 +2,7 @@ package dev.symbiosis.runtime.events
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -18,6 +19,13 @@ data class Event(
   val payload: JsonObject,
   val device_id: String? = null,
 )
+
+/**
+ * The session this event is about (`payload.session_id`), or null when it names none. Visibility hangs on it
+ * (Principal.canSeeEvent): a session's events are its owner's.
+ */
+fun Event.sessionIdOrNull(): String? =
+  (payload["session_id"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.contentOrNull?.takeIf { it.isNotBlank() }
 
 object Topics {
   const val SMS_RECEIVED = "messaging.sms_received"

@@ -35,7 +35,7 @@ object CallAudioPlay {
       Param("session_id", "string", "The call session (from telephony.place_call)", required = true),
       Param("audio_base64", "string", "Base64-encoded WAV file, or raw 16-bit little-endian PCM", required = true),
       Param("format", "string", "wav (default) or pcm", enum = listOf("wav", "pcm")),
-      Param("sample_rate", "integer", "Sample rate of raw PCM (ignored for wav, which carries its own)"),
+      Param("sample_rate", "integer", "Sample rate of raw PCM, 8000..48000 (default 16000; ignored for wav, which carries its own)"),
       Param("gain", "number", "0..1 output level (default 1.0)"),
     ),
     actionClass = ActionClass.COMMUNICATION, tier = 1,
@@ -46,7 +46,14 @@ object CallAudioPlay {
     val b64 = args["audio_base64"]?.toString()?.takeIf { it.isNotBlank() }
       ?: return@Capability CapabilityResult.fail("invalid_params", "audio_base64 is required")
     val format = (args["format"]?.toString() ?: "wav").lowercase()
-    val srcRate = (args["sample_rate"] as? Number)?.toInt() ?: TelephonyAudio.RATE
+    // Bounded: sample_rate 1 asked the resampler for 16 000 times the input (a multi-GB allocation), and a few
+    // hundred Hz meant hours of uplink audio.
+    val rawRate = args["sample_rate"]
+    val srcRate = when (rawRate) {
+      null -> TelephonyAudio.RATE
+      is Number -> rawRate.toDouble().takeIf { it == Math.floor(it) && it.toLong() in Wav.RATES.first..Wav.RATES.last }?.toInt()
+      else -> null
+    } ?: return@Capability CapabilityResult.fail("invalid_params", "sample_rate must be an integer between ${Wav.RATES.first} and ${Wav.RATES.last}")
     val gain = ((args["gain"] as? Number)?.toDouble() ?: 1.0).coerceIn(0.0, 1.0)
     if (!TelephonyAudio.hasPermission(context)) {
       return@Capability CapabilityResult.fail("capability.unavailable", "MODIFY_AUDIO_ROUTING not granted")
@@ -62,6 +69,9 @@ object CallAudioPlay {
       val pcm: ShortArray
       val sourceRate: Int
       if (format == "pcm") {
+        if (bytes.size / 2 > Wav.MAX_SECONDS.toLong() * srcRate) {
+          return@withContext CapabilityResult.fail("invalid_params", "audio longer than ${Wav.MAX_SECONDS} s")
+        }
         val mono = ShortArray(bytes.size / 2)
         for (i in mono.indices) {
           mono[i] = ((bytes[i * 2].toInt() and 0xff) or (bytes[i * 2 + 1].toInt() shl 8)).toShort()
@@ -74,7 +84,7 @@ object CallAudioPlay {
         try {
           tmp.writeBytes(bytes)
           val decoded = Wav.decodeMono16(tmp, TelephonyAudio.RATE)
-            ?: return@withContext CapabilityResult.fail("invalid_params", "could not decode WAV (need 16-bit PCM)")
+            ?: return@withContext CapabilityResult.fail("invalid_params", "could not decode WAV (need 16-bit PCM at ${Wav.RATES.first}..${Wav.RATES.last} Hz, at most ${Wav.MAX_SECONDS} s)")
           pcm = decoded.pcm
           sourceRate = decoded.sourceRate
         } finally {

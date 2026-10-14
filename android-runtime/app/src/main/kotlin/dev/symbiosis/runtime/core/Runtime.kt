@@ -100,6 +100,8 @@ class Runtime private constructor(private val context: Context) {
     executor = automationExecutor,
     // The owner's CURRENT principal: a revoked or expired peer's workflows do not run (and get disabled).
     principalFor = { id -> principalOf(id) },
+    // A call's events (transcripts included) trigger only workflows whose owner owns that call.
+    sessionOwner = { id -> sessions.ownerOf(id) },
     emergencyStopped = { policy.emergencyStop.value },
     alarms = dev.symbiosis.runtime.automation.AndroidAlarms(context),
     scope = scope,
@@ -261,7 +263,7 @@ class Runtime private constructor(private val context: Context) {
     }
     registry.registerAll(DroidMcpAdapter.adapt(context, droid))
     registry.registerAll(NativeCapabilities.telephony(calls, sessions))
-    registry.registerAll(NativeCapabilities.events(broker, subscriptions))
+    registry.registerAll(NativeCapabilities.events(broker, subscriptions) { sessions.ownerOf(it) })
     registry.registerAll(NativeCapabilities.device(context) { status() })
     // Conversation mode is part of the release surface (live-verified on the Pixel, Sept 2026).
     registry.register(dev.symbiosis.runtime.capabilities.CallSpeech.speakCapability(context, broker, sessions))
@@ -553,7 +555,7 @@ class Runtime private constructor(private val context: Context) {
     "phone://policy" -> if (!principal.isAdmin) null else buildJsonObject { put("config", Json.lenient.encodeToJsonElement(dev.symbiosis.runtime.policy.PolicyConfig.serializer(), policy.config.value)); put("overrides", Json.toJson(policy.overrides().mapValues { it.value.name })); put("emergency_stop", policy.emergencyStop.value); put("observe_only", policy.observeOnly.value) }
     "phone://sessions" -> JsonArray(sessions.recent(20).filter { principal.isAdmin || (it.peerId != null && it.peerId == principal.peerId) }.map { sessions.toJson(it) })
     "phone://events/recent" -> if (!principal.isAdmin && !principal.canSubscribe("policy.x")) null
-      else JsonArray(broker.recent(50).filter { principal.canSeeTopic(it.topic) }.map { Json.lenient.encodeToJsonElement(dev.symbiosis.runtime.events.Event.serializer(), it) })
+      else JsonArray(broker.recent(50).filter { principal.canSeeEvent(it) { id -> sessions.ownerOf(id) } }.map { Json.lenient.encodeToJsonElement(dev.symbiosis.runtime.events.Event.serializer(), it) })
     "phone://audit/verify" -> if (!principal.isAdmin) null else {
       val broken = audit.verifyChain(); val anchor = audit.anchor()
       buildJsonObject { put("intact", broken == null); put("first_broken_id", broken); put("entries", audit.count()); put("verified_from_id", anchor?.firstKeptId); put("pruned_through", anchor?.createdAt) }

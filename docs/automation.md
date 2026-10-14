@@ -77,6 +77,8 @@ exist today (`docs/protocol.md` §4.1): `messaging.sms_received`, `messaging.rcs
 `policy.approval_resolved`, `runtime.started`, `runtime.stopping`. **Not** `automation.*` (the engine's own
 announcements): a topic or glob that could match them (including bare `*`) is refused. The owner's current scopes are
 checked before `where` is evaluated; an event on a topic the owner can no longer see is ignored without a log line.
+So is an event whose payload names a `session_id` the owner does not own (another peer's call): session events
+trigger only their owner's workflows (and the admin's).
 
 **Schedules**: `every_minutes` (≥ 15) or `daily_at` "HH:MM" (24 h, phone's local time) with optional `days`
 (`mon`…`sun`). They ride on one inexact `AlarmManager.setAndAllowWhileIdle` alarm — no new permission (exact

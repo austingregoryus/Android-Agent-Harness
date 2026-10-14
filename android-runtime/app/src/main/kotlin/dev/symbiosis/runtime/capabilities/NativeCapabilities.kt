@@ -69,6 +69,7 @@ object NativeCapabilities {
         else CapabilityResult.unavailable("TelecomManager.endCall refused on this device; the call must be ended from the dialer or by the far end")
       } catch (e: SecurityException) { CapabilityResult.missingPermission("android.permission.${e.message}") }
       catch (e: IllegalArgumentException) { CapabilityResult.fail("session.unknown", id) }
+      catch (e: IllegalStateException) { CapabilityResult.unavailable(UNIDENTIFIED_CALL) }
     },
     Capability(
       name = "telephony.set_audio_route",
@@ -91,15 +92,16 @@ object NativeCapabilities {
       params = listOf(Param("session_id", "string", "Session", required = true), Param("digits", "string", "Digits 0-9*#", required = true)),
       actionClass = ActionClass.LOW_RISK,
     ) { args, ctx ->
-      // Holder.active() is whatever call Telecom has up, not necessarily this session's: without the live-call
-      // check, the owner of a stale session could key tones into the user's own call.
+      // Owned AND live, and then this session's own Telecom call: Holder.active(), which this used to use, was
+      // whatever call Telecom had up, so tones could go into the user's own call.
       val access = SessionAccess.ownedActiveCall(sessions, args["session_id"]?.toString(), ctx)
       if (access is SessionAccess.Access.Denied) return@Capability access.result
       val id = (access as SessionAccess.Access.Ok).session.sessionId
       val digits =args["digits"]?.toString()?.filter { it in "0123456789*#" } ?: ""
       if (digits.isEmpty()) return@Capability CapabilityResult.fail("invalid_params", "digits must be 0-9, * or #")
-      val call = dev.symbiosis.runtime.telephony.SymbiosisInCallService.Holder.active()
-        ?: return@Capability CapabilityResult.unavailable("dtmf needs the default-dialer role (InCallService not bound)")
+      val call = calls.telecomCallFor(id) ?: return@Capability CapabilityResult.unavailable(
+        if (!dev.symbiosis.runtime.telephony.SymbiosisInCallService.Holder.bound) "dtmf needs the default-dialer role (InCallService not bound)" else UNIDENTIFIED_CALL,
+      )
       for (d in digits) { call.playDtmfTone(d); kotlinx.coroutines.delay(160); call.stopDtmfTone(); kotlinx.coroutines.delay(90) }
       sessions.emitFrame(id, sessions.get(id)?.correlationId, "dtmf.sent", kotlinx.serialization.json.buildJsonObject { put("digits", kotlinx.serialization.json.JsonPrimitive(digits)) })
       CapabilityResult.ok(mapOf("session_id" to id, "digits" to digits))
@@ -125,6 +127,8 @@ object NativeCapabilities {
     },
   )
 
+  private const val UNIDENTIFIED_CALL = "this session's own call could not be identified (Telecom has not reported it, or another call may be up); refusing to act on a call that may be the user's"
+
   /** Sessions are visible to their owning peer and to the admin; sessions without an owner are admin-only. */
   private fun owns(s: dev.symbiosis.runtime.sessions.Session, ctx: CallContext): Boolean =
     ctx.principal?.isAdmin == true || (s.peerId != null && s.peerId == ctx.peerId)
@@ -132,7 +136,8 @@ object NativeCapabilities {
 
   private fun scopeError(glob: String) = CapabilityResult.fail("policy.denied", "topic '$glob' is outside this peer's scopes (needs ${dev.symbiosis.runtime.capabilities.Scopes.requiredScopesForTopicGlob(glob).joinToString(" and ")})")
 
-  fun events(broker: EventBroker, subs: SubscriptionStore): List<Capability> = listOf(
+  /** @param sessionOwner owner of a session named in an event payload ([SessionManager.ownerOf]), for [Principal.canSeeEvent]. */
+  fun events(broker: EventBroker, subs: SubscriptionStore, sessionOwner: (String) -> String?): List<Capability> = listOf(
     Capability(
       name = "events.subscribe",
       description = "Create a persistent subscription. Events are pushed on /ws/events and can be pulled with events.replay.",
@@ -190,7 +195,7 @@ object NativeCapabilities {
       val sub = subs.get(peer, args["subscription_id"].toString()) ?: return@Capability CapabilityResult.fail("subscription.unknown")
       val since = (args["since_id"] as? Number)?.toLong() ?: sub.ack_cursor
       val principal = ctx.principal
-      val r = subs.replay(sub, since, (args["limit"] as? Number)?.toInt() ?: 200) { ev -> principal?.canSeeTopic(ev.topic) == true }
+      val r = subs.replay(sub, since, (args["limit"] as? Number)?.toInt() ?: 200) { ev -> principal?.canSeeEvent(ev, sessionOwner) == true }
       CapabilityResult.ok(
         mapOf(
           "events" to r.events.map { Json.toMap(Json.lenient.encodeToJsonElement(dev.symbiosis.runtime.events.Event.serializer(), it) as JsonObject) },
@@ -214,7 +219,7 @@ object NativeCapabilities {
       val filter = parseFilter(args["filter"])
       val timeout = ((args["timeout_ms"] as? Number)?.toLong() ?: 30_000L).coerceIn(100, 60_000)
       val ev = withTimeoutOrNull(timeout) {
-        broker.live.first { dev.symbiosis.runtime.events.TopicGlob.matches(glob, it.topic) && principal.canSeeTopic(it.topic) && filter.all { f -> f.matches(it.payload) } }
+        broker.live.first { dev.symbiosis.runtime.events.TopicGlob.matches(glob, it.topic) && principal.canSeeEvent(it, sessionOwner) && filter.all { f -> f.matches(it.payload) } }
       }
       if (ev == null) CapabilityResult.ok(mapOf("timed_out" to true))
       else CapabilityResult.ok(mapOf("timed_out" to false, "event" to Json.toMap(Json.lenient.encodeToJsonElement(dev.symbiosis.runtime.events.Event.serializer(), ev) as JsonObject)))

@@ -15,14 +15,23 @@ import java.util.concurrent.ConcurrentHashMap
  * the binding is what routes the full call audio to the app. Everything here is additive: the
  * TelephonyCallback path keeps working when the service is not bound.
  *
- * On a debug build with those privileged permissions granted, this promotes itself to a `microphone`
- * foreground service for the duration of a call so background capture is unrestricted (matches BCR).
+ * With RECORD_AUDIO granted, this promotes itself to a `microphone` foreground service for the duration of a call
+ * so background capture is unrestricted (matches BCR). This used to happen on debug builds only, a leftover from
+ * when the call-audio permissions lived in the debug manifest: conversation mode ships in release (the type and
+ * FOREGROUND_SERVICE_MICROPHONE are in the main manifest), and a release build with the screen off could not
+ * hear the far party.
  */
 class SymbiosisInCallService : InCallService() {
 
   override fun onCallAdded(call: Call) {
     super.onCallAdded(call)
     Holder.calls[call] = Unit
+    // Before the first state is reported: if this is the call a session just placed, bind it to that session so
+    // end/DTMF act on it and its states drive that session. Every other call (the user's own) stays unbound.
+    runCatching {
+      val d = call.details
+      Runtime.get(this).calls.onTelecomCallAdded(call, d.handle?.schemeSpecificPart, d.callDirection == Call.Details.DIRECTION_OUTGOING)
+    }.onFailure { android.util.Log.w("SymbiosisInCall", "call binding failed", it) }
     call.registerCallback(callback)
     emit(call, "added")
     maybeStartMicForeground()
@@ -38,18 +47,19 @@ class SymbiosisInCallService : InCallService() {
     call.unregisterCallback(callback)
     Holder.calls.remove(call)
     emit(call, "removed")
+    runCatching { Runtime.get(this).calls.onTelecomCallRemoved(call) }
     if (Holder.calls.isEmpty()) stopMicForeground()
     super.onCallRemoved(call)
   }
 
   private var micForeground = false
   private fun maybeStartMicForeground() {
-    if (micForeground || !dev.symbiosis.runtime.BuildConfig.DEBUG) return
+    if (micForeground) return
     if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
     runCatching {
       val nm = getSystemService(android.app.NotificationManager::class.java)
-      nm.createNotificationChannel(android.app.NotificationChannel(FGS_CHANNEL, "Call audio research", android.app.NotificationManager.IMPORTANCE_LOW))
-      val n = android.app.Notification.Builder(this, FGS_CHANNEL).setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Android Agent Harness call audio (research)").build()
+      nm.createNotificationChannel(android.app.NotificationChannel(FGS_CHANNEL, "Call audio", android.app.NotificationManager.IMPORTANCE_LOW))
+      val n = android.app.Notification.Builder(this, FGS_CHANNEL).setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Android Agent Harness call audio").build()
       startForeground(FGS_ID, n, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
       micForeground = true
     }.onFailure { android.util.Log.w("SymbiosisInCall", "mic FGS start failed", it) }
@@ -93,6 +103,8 @@ class SymbiosisInCallService : InCallService() {
     val causeCode = cause?.code
     val causeReason = cause?.reason
     val rt = runCatching { Runtime.get(this) }.getOrNull() ?: return
+    // The session this Call belongs to, or null: only a call bound in onCallAdded is ever attributed to a session.
+    val sessionId = rt.calls.sessionFor(call)
     runCatching {
       rt.callEvents.execute {
         runCatching {
@@ -101,22 +113,24 @@ class SymbiosisInCallService : InCallService() {
             mapOf(
               "state" to state, "why" to why, "number" to number,
               "direction" to if (incoming) "in" else "out",
-              "session_id" to rt.calls.currentSessionId(),
+              "session_id" to sessionId,
               "can_hold" to canHold, "can_mute" to canMute,
               "disconnect_cause" to causeText,
             ),
           )
-          rt.calls.onPreciseState(state, number, causeCode, causeReason)
+          if (sessionId != null) rt.calls.onPreciseState(sessionId, state, number, causeCode, causeReason)
         }.onFailure { android.util.Log.w("SymbiosisInCall", "precise state handling failed", it) }
       }
     }
   }
 
-  /** Static handle for capabilities: the live calls Telecom has handed us, or none when we are not the dialer. */
+  /**
+   * Static handle: the live calls Telecom has handed us, or none when we are not bound. These include the user's
+   * own calls; a capability acting on a session's call uses CallSessions.telecomCallFor, never a call picked from here.
+   */
   object Holder {
     val calls = ConcurrentHashMap<Call, Unit>()
     @Volatile var audioState: CallAudioState? = null
-    fun active(): Call? = calls.keys.firstOrNull { it.state == Call.STATE_ACTIVE } ?: calls.keys.firstOrNull { it.state != Call.STATE_DISCONNECTED }
     fun ringing(): Call? = calls.keys.firstOrNull { it.state == Call.STATE_RINGING }
     val bound: Boolean get() = instance != null
     @Volatile var instance: SymbiosisInCallService? = null

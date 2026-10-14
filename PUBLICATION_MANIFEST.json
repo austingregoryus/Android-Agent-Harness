@@ -105,7 +105,7 @@
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/WorkflowEngine.kt",
-    "sha256": "f2a9b09e5666c189869c08eef8c6e7a9f8812d9f7a8e0f5e307313df7c0d8b24"
+    "sha256": "48cc357af0dbd749397b423f9759dad2cd81cd265167a086ca63c6c304e0fb4a"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/automation/WorkflowStore.kt",
@@ -125,7 +125,7 @@
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/CallAudioPlay.kt",
-    "sha256": "b137b0322e50e831b52a84734b35ac7de1a51bd1da0e17a835014d8488d131cd"
+    "sha256": "dfd26228fbb806bddfee6dbca940284f27aba1e09150bb6f578f4af2abc7edcf"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/CallSpeech.kt",
@@ -141,7 +141,7 @@
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/CapabilityRegistry.kt",
-    "sha256": "0ea798a2fecba7fcd66aadc46dc082673fc57ed048a0c1dd94875243e6941585"
+    "sha256": "72ab72c0e81e67624d6be1a8adc345b873d61db5c0bb9fd89e1eff391b4715cb"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/Clipboard.kt",
@@ -161,7 +161,7 @@
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/NativeCapabilities.kt",
-    "sha256": "5ffbe33bda5e39205a082adf7b2b3ea4d844a43e16009da68e540f4168ba3490"
+    "sha256": "064febfc3e830d98395bc230d0122cd6d92562f5ccc68d5dea0a55e6afa7a0fa"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/capabilities/Notify.kt",
@@ -197,7 +197,7 @@
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/core/Runtime.kt",
-    "sha256": "13118f5c5270ab97014f5df4daa90aad88f01aad8a32b647b28647bb32bcbf33"
+    "sha256": "a28356656542806c2f8ad7b87baa9c362748fdc4b65ffad741998acf47a04166"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/core/RuntimeService.kt",
@@ -209,15 +209,15 @@
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/events/Event.kt",
-    "sha256": "67bd81cde78fa44582663120b5d628d8042bc28351c15f60f7b737eb8be8a70e"
+    "sha256": "9b01a691d6131287a1c54b4f1877ae58bce5f7e0365f98765ab4427d9b2820b2"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/events/EventBroker.kt",
-    "sha256": "028eda14095a87f4b02f5d1fd3df82c18ca9f3ad50468cb10f6fef2e89d37356"
+    "sha256": "ff59f8194826c74e4eb64508d36336b1898f035d5779ec9b111f5601f6032a24"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/events/SubscriptionStore.kt",
-    "sha256": "2ff0be0195ffc5ecc18aef2a9ac66ff96b2485c1d56d4b62eb04ab1f29efa187"
+    "sha256": "1c756ec9bcb724f202ede0172703613346af7b05eb777141678c947b50eff6b0"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/events/sources/CallStateSource.kt",
@@ -257,11 +257,15 @@
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/sessions/CallSession.kt",
-    "sha256": "0f5adde4d47f9e887680d97dd52cb3f7b2ba40943f12747616f7116c6c636a9d"
+    "sha256": "34c377d177a77ba348f439887caaeda12924db56e6e41753db91d2d23a5f759f"
+  },
+  {
+    "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/sessions/SessionFrameCursor.kt",
+    "sha256": "26d263718f9afe760a1dee88c3a5186a3eec6750c82338d9f63309dedb5c4ab6"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/sessions/SessionManager.kt",
-    "sha256": "701ab091228f9f03c0fba11a22fda29b070cbef2cff6be8c7f41ebb2f45e28ba"
+    "sha256": "c6a0fd71d30ac893f5d9fe7960d12e04d49151677b5b04d1046959f6b42cad5a"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/storage/Db.kt",
@@ -289,7 +293,7 @@
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/SymbiosisInCallService.kt",
-    "sha256": "dcf66e4033c4e53494ba4ef9b032f708a464e0931f68ea5a7af9ac0dc06b8651"
+    "sha256": "51833dace2ba17a08f6b20797157cdcc5feda1651696b636c40cacfd583669fe"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/TelephonyAudio.kt",
@@ -297,7 +301,7 @@
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/Tts.kt",
-    "sha256": "0f0a2d51390fe4bb8ede7c8f27f1b6ef6a82831745a132da52b12f90e5629448"
+    "sha256": "1baeee4e910a245f234381771ef1c7ef3d060ad3709fccf2132fc96daf832e00"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/TurnDetector.kt",
@@ -321,7 +325,7 @@
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/transport/Server.kt",
-    "sha256": "5dcc640c370da67bc0dd24908583bbcef0405758dc044f4977fe866bec406616"
+    "sha256": "6b2f5acf8845f8b5b3b89afe613b99cdb4695548f89d9c363c6a94e70b8c6c2a"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/ui/DialActivity.kt",
@@ -368,6 +372,10 @@
     "sha256": "f5f1f26b9d05d055aaa30a8906f419dd8ad974e48e1588b5568d16676c7d6784"
   },
   {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/CallSessionGateTest.kt",
+    "sha256": "f8105da00b7c0a832dca3a080b39e39896a25a763722336c9cd694a1b0fa9084"
+  },
+  {
     "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/ConversationAudioTest.kt",
     "sha256": "f685826ef4f161b3a785593983e0535f67a70dc2a37294e6bf283a857f2c4114"
   },
@@ -400,12 +408,24 @@
     "sha256": "4220dfd8a90be8a36660a7e2586bebe565b3b68b7b61602e0671cfa84495672d"
   },
   {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/SessionEventAccessTest.kt",
+    "sha256": "9f5caad102bc5b6dab234ec62ff8106310bf686f6b7849680ca7a1881ed95f5b"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/SessionFrameCursorTest.kt",
+    "sha256": "e9c6f0391d0d0dd3b1e0c303a8741116b82116f63eeb8e75aca3f1d2fd81cb6a"
+  },
+  {
     "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/StatefulPathsTest.kt",
     "sha256": "d9e0ff305955c0654e8acfbd87379759a518b23f60cf09419e17d496881fce4e"
   },
   {
     "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/TopicAuthorityReviewTest.kt",
     "sha256": "fa7ff7e872179ee7ef8380c914a529501bdc6be8dd47f543e70436dc02bdd8e5"
+  },
+  {
+    "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/WavParserTest.kt",
+    "sha256": "b1e07e980affea55930de74a9240b0ea085bbafa67d4cbb5df828c381c28feb4"
   },
   {
     "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/WorkflowTest.kt",
@@ -469,7 +489,7 @@
   },
   {
     "path": "docs/automation.md",
-    "sha256": "382d02956d5f3077236046745959529bb5e3d63396a33219dcf7101739827cf5"
+    "sha256": "2498b21bfebd129ca200cb2ea8469eab2939a6f45a2e827a22097304731e143d"
   },
   {
     "path": "docs/conversation-mode.md",
@@ -489,7 +509,7 @@
   },
   {
     "path": "docs/protocol.md",
-    "sha256": "e635676c4a3c2f6a6733dbe7eaa692365f6216b09336ed1017fdb014b536f578"
+    "sha256": "f5565238b9c51aa95644ae120aac50b17e4e21a94aeaa7179c54c4cf30d55eba"
   },
   {
     "path": "docs/publishing.md",
@@ -789,7 +809,7 @@
   },
   {
     "path": "protocol/schemas/session-frames.json",
-    "sha256": "e5eb95325d8ef24ed511ced0ba362c0a627194836d6755788d4904a480d15021"
+    "sha256": "23610b75639ccd9a9d28e995be760d95423744f58a8a4a47a541b25a2c62a95b"
   },
   {
     "path": "protocol/schemas/subscription.json",
