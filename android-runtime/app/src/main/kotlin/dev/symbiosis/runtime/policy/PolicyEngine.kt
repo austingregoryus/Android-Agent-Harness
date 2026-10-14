@@ -82,11 +82,17 @@ class PolicyEngine(private val db: Db, private val rateLimiter: RateLimiter) {
     if (decision == PolicyDecision.DENY) return PolicyOutcome.Deny("policy.denied", "capability ${cap.name} is denied by policy")
 
     if (cap.actionClass >= ActionClass.COMMUNICATION) {
-      val target = cap.targetArg?.let { args[it]?.toString() }
-      if (target != null) {
-        val norm = normalizeNumber(target)
-        if (cfg.contactDenylist.any { sameNumber(normalizeNumber(it), norm) }) return PolicyOutcome.Deny("policy.denied", "target is on the denylist")
-        val allowlisted = cfg.contactAllowlist.any { sameNumber(normalizeNumber(it), norm) }
+      // A resolver names every identity the call reaches (a notification reply: sender name and number); an
+      // argument names one. Denied if ANY identity is on the denylist, allowlisted only if EVERY one is, so a group
+      // thread or a name the list does not hold still asks. An unresolvable target counts as not on the allowlist.
+      val resolved = cap.targetResolver?.let { r -> runCatching { r(args) }.getOrDefault(emptyList()).filter { it.isNotBlank() } }
+      val targets = resolved ?: cap.targetArg?.let { a -> args[a]?.toString()?.let { listOf(it) } }
+      if (resolved != null && resolved.isEmpty() && cfg.contactAllowlist.isNotEmpty() && decision == PolicyDecision.ALLOW) {
+        decision = PolicyDecision.APPROVE; approveReason = "target unknown, not on allowlist"
+      }
+      if (!targets.isNullOrEmpty()) {
+        if (targets.any { t -> cfg.contactDenylist.any { sameTarget(it, t) } }) return PolicyOutcome.Deny("policy.denied", "target is on the denylist")
+        val allowlisted = targets.all { t -> cfg.contactAllowlist.any { sameTarget(it, t) } }
         if (cfg.contactAllowlist.isNotEmpty() && !allowlisted && decision == PolicyDecision.ALLOW) {
           decision = PolicyDecision.APPROVE; approveReason = "target not on allowlist"
         }
@@ -214,6 +220,17 @@ class PolicyEngine(private val db: Db, private val rateLimiter: RateLimiter) {
 
     /** Compare complete normalized numbers; a shared national suffix does not make country codes equal. */
     fun sameNumber(a: String, b: String): Boolean = normalizeNumber(a) == normalizeNumber(b)
+
+    /**
+     * A contact-list entry against a call's target. Numbers compare as [sameNumber]. When either side has no digits
+     * (a contact name, as a notification title gives it) they compare as trimmed, case-insensitive text instead:
+     * two different names both normalize to "" and must not count as the same number.
+     */
+    fun sameTarget(entry: String, target: String): Boolean {
+      val a = normalizeNumber(entry); val b = normalizeNumber(target)
+      if (a.isEmpty() || b.isEmpty()) return entry.isNotBlank() && entry.trim().equals(target.trim(), ignoreCase = true)
+      return a == b
+    }
 
     fun normalizeNumber(raw: String): String {
       val s = stripDialDecorations(raw)

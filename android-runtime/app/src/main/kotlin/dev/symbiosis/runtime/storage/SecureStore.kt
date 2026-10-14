@@ -97,7 +97,11 @@ class SecureStore(context: Context) {
   /** The admin bearer token. Created on first access. */
   val adminToken: String get() = getOrCreate(K_ADMIN_TOKEN) { Ids.token() }
 
-  fun rotateAdminToken(): String = Ids.token().also { prefs.edit().putString(K_ADMIN_TOKEN, it).apply() }
+  /**
+   * Replace the admin token (the app's "Rotate admin token" control, via Runtime.rotateAdminToken). Committed
+   * synchronously under the same lock as [getOrCreate], so the next authenticate() already sees the new value.
+   */
+  fun rotateAdminToken(): String = synchronized(this) { Ids.token().also { prefs.edit().putString(K_ADMIN_TOKEN, it).commit() } }
 
   private companion object {
     const val TAG = "SecureStore"

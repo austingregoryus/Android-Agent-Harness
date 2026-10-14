@@ -69,7 +69,7 @@ class PeerStore(private val db: Db, private val secure: SecureStore) {
   /**
    * What a "standard" agent gets: every read family, messaging and telephony (calls and texts run without a tap by
    * default; "Ask me first" and the contact lists in PolicyConfig gate them), the screen, calendar, sensors, files. The ceiling is
-   * EXTERNAL_COMMITMENT because place_call and send_sms live there; below that ceiling they are invisible
+   * EXTERNAL_COMMITMENT because place_call, send_sms and notifications.reply live there; below that ceiling they are invisible
    * (that is exactly what hid them from the first Hermes peer on 2026-09-18).
    */
   fun mintStandardCode(): PairingCode = mintPairingCode(STANDARD_SCOPES, STANDARD_CEILING)

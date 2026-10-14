@@ -54,6 +54,8 @@
     <application
         android:name=".RuntimeApp"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -175,7 +177,8 @@
             </intent-filter>
         </receiver>
 
-        <!-- Debug builds re-declare this as exported (src/debug/AndroidManifest.xml) so adb can resolve approvals. -->
+        <!-- Not exported: only our own notification PendingIntents reach it. Debug builds re-declare it as exported
+             behind the DUMP permission (src/debug/AndroidManifest.xml) so adb, and no installed app, can resolve approvals. -->
         <receiver
             android:name=".policy.ApprovalReceiver"
             android:exported="false" />

@@ -65,6 +65,12 @@ class Capability(
   val version: String = "0.1",
   /** Argument key that names a contact/number target, checked against allow/deny lists. */
   val targetArg: String? = null,
+  /**
+   * For a tool whose target is not an argument (notifications.reply names a notification key): the identities the
+   * call reaches (sender name, number), resolved from the args. An empty list means the target is unknown.
+   * Checked against the contact lists in place of [targetArg]; see PolicyEngine.evaluate.
+   */
+  val targetResolver: ((Map<String, Any?>) -> List<String>)? = null,
   val execute: suspend (args: Map<String, Any?>, ctx: CallContext) -> CapabilityResult,
 ) {
   fun inputSchema(): JsonObject = kotlinx.serialization.json.buildJsonObject {

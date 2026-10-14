@@ -3,15 +3,18 @@
     xmlns:tools="http://schemas.android.com/tools">
     <!-- The call-audio permissions moved to the main manifest (conversation mode ships in release). -->
     <application>
-        <!-- Debug only: exported so `adb shell am broadcast` can drive approvals and pairing on an emulator. -->
+        <!-- Debug only: exported so `adb shell am broadcast` can drive approvals and pairing on an emulator.
+             android.permission.DUMP limits senders to the adb shell (and the system): an installed app cannot hold
+             it, so it cannot approve actions, release emergency stop, reset rate counters, allowlist a number or
+             enable LAN through these. Our own notification PendingIntents still arrive (same-app senders pass). -->
         <receiver
             android:name=".policy.ApprovalReceiver"
             android:exported="true"
-            tools:replace="android:exported"
-            tools:ignore="ExportedReceiver" />
+            android:permission="android.permission.DUMP"
+            tools:replace="android:exported" />
         <receiver
             android:name=".core.DebugReceiver"
             android:exported="true"
-            tools:ignore="ExportedReceiver" />
+            android:permission="android.permission.DUMP" />
     </application>
 </manifest>

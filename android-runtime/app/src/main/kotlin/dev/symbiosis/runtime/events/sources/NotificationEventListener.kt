@@ -28,10 +28,19 @@ class NotificationEventListener : McpNotificationListenerServiceBase() {
     super.onListenerDisconnected()
   }
 
+  /**
+   * droid-mcp's base fills the store its notifications.* tools read (list, reply, invoke_action, dismiss) from this
+   * on connect and from [onNotificationPosted]. Our own notifications never enter it: the approval notification's
+   * Approve action is a PendingIntent, and invoke_action would let an agent fire it.
+   */
+  override fun getActiveNotifications(): Array<StatusBarNotification>? =
+    super.getActiveNotifications()?.filter { it.packageName != packageName }?.toTypedArray()
+
   override fun onNotificationPosted(sbn: StatusBarNotification?) {
-    super.onNotificationPosted(sbn)
     sbn ?: return
-    if (sbn.packageName == packageName) return // never loop on our own runtime/approval notifications
+    // Never stored for tools (see getActiveNotifications), and never looped back as our own events.
+    if (sbn.packageName == packageName) return
+    super.onNotificationPosted(sbn)
     val n = sbn.notification
     val extras = n.extras
     val text = extras.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT)?.toString() ?: extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString()

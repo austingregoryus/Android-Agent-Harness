@@ -41,6 +41,8 @@ the tool's action class ≤ the peer's `max_action_class`. `tools/list` is filte
 hidden tool returns JSON-RPC error `-32601` (method/tool not found) so a peer cannot enumerate by probing.
 
 **Admin token.** Created on first run and retained so the unlocked UI can reveal it repeatedly with **Show admin token**.
+**Rotate admin token** replaces it: the old token is rejected from the next request, admin WebSockets and MCP sessions are
+closed, and the admin's pending approvals are cancelled.
 SecureStore normally uses Keystore-backed encrypted preferences; see [storage limitations](security.md#limits).
 Scopes `["*"]`, ceiling `DESTRUCTIVE`. Pairing-code issuance is a local UI operation; redeeming a code at `/pair` is unauthenticated.
 
@@ -82,6 +84,12 @@ Implements MCP protocol version `2025-06-18` (accepts `2025-03-26` and `2024-11-
   result is `conflict.idempotency_mismatch`. An outcome whose result exceeded the 8 KB audit cap is never replayed:
   the retry gets `idempotency.result_unavailable` with the `audit_id` of the run — the call is not executed again,
   because it already succeeded and repeating a side effect is worse than losing its result.
+- Gateway retries (gateway behavior, not runtime): the gateway's stdio MCP server uses the client's own
+  `params._meta.correlationId` when it is `corr_` plus 8 to 64 of `[A-Za-z0-9_-]` (otherwise `-32602`), so a client
+  that reuses it on a retry gets the same idempotency key. A proxied call that produced no result is an `isError`
+  tool result, not a JSON-RPC error: `transport.not_sent` (never written, or refused before dispatch with HTTP 4xx),
+  or `transport.outcome_unknown` / `protocol.invalid_result` with `correlation_id` and `idempotency_key` (written,
+  then a timeout, a dropped connection, HTTP 5xx or an unreadable result). A runtime JSON-RPC error keeps its code.
 
 ### 3.1 Methods
 
@@ -182,6 +190,10 @@ Client → runtime (JSON text frames):
 | `list` | → `subscriptions [ ... ]` |
 | `ping` | → `pong` |
 
+Every client frame may carry `ref`; the runtime echoes it verbatim on the reply, including an `error` reply. The
+gateway sends a `ref` on every request and, once refs are echoed on a socket, does not treat an `error` frame without
+its `ref` as the answer to its outstanding request.
+
 Runtime → client:
 
 | `type` | Fields |
@@ -192,6 +204,7 @@ Runtime → client:
 | `error` | `code, message, ref?` |
 | `pong` | |
 | `bye` | `reason` (revoked, shutdown, emergency_stop) — then close. |
+| `hello` | `peer_id, last_event_id, subscriptions[]`: the first frame on every socket. |
 
 **Backpressure rule.** Each socket has a bounded outbound queue (256 events). When full, the runtime **stops
 pushing** for that subscription and sends one `gap { from_id, to_id }` covering everything it did not push.
@@ -212,6 +225,10 @@ subscription is never pushed live; it is served only by `replay` (WS or `events.
 **Reconnect.** On connect a client should `replay` each subscription from its persisted `ack_cursor`, then start
 receiving live pushes. Live pushes begin immediately after `subscribe`/connect; a client that interleaves replay
 and live must de-duplicate by `event.id` (ids are unique and ordered, so `if id <= last_seen: skip`).
+A persisted cursor above `hello.last_event_id` predates a journal reset; the gateway restarts it from 0. A newly
+created subscription's cursor starts at its `created_at_event_id`, never at an older subscription's cursor. A replay
+that fails (timeout, `error`, a `replay_result` for another `subscription_id`) is retried with bounded backoff; after
+repeated failures the gateway closes the socket and replays again on reconnect.
 
 ## 5. Sessions
 
@@ -271,18 +288,26 @@ Decision pipeline for every `tools/call`, evaluated in this order and short-circ
 5. **Contact lists** (COMMUNICATION and above with a `target`/`to` argument): denylist → deny; allowlist non-empty
    and target absent → approve; **target on the allowlist → the user's standing approval**: an APPROVE that came
    from the class default becomes ALLOW (an explicit per-capability APPROVE override still asks).
+   `notifications.reply` (EXTERNAL_COMMITMENT) has no target argument: its targets are the notification's sender
+   (title, conversation title, and MessagingStyle senders by name and `tel:` number). Any of them on the denylist →
+   deny; it counts as allowlisted only if all of them are; a sender that cannot be resolved counts as not on the
+   allowlist. List entries without digits (contact names) compare as case-insensitive text.
 6. **Quiet hours** (COMMUNICATION and above): inside the window → approve.
 7. **Rate limits** (persisted sliding windows in `rate_counters`, keyed by rate class): defaults
    `sms 20/hour, 100/day` · `call 5/hour, 20/day` · `install 3/day` · `mutation 300/hour, 2000/day` · `wake 6/hour, 24/day` ·
    `automation 240/hour, 2000/day` (batches, not their steps) · `ai 120/hour, 1000/day` (`ai.ask`). Exceeded → `policy.rate_limited`. A class default or rate
    limit missing from a saved config (it predates that class) falls back to the code default, not to approve/unlimited.
-8. Execute, with audit rows before (intent) and after (outcome).
+8. Execute, with audit rows before (intent) and after (outcome). At execution time a `ui.*` call while one of this
+   app's windows is on screen, `apps.launch`/`apps.open_deep_link`/`apps.send_intent` with this app's
+   `package_name`, and a notification tool given a key this app posted all fail with `ui.self_protected`.
 
 `approve` creates a `pending_actions` row and a high-priority notification with Approve/Deny actions, then waits up
 to `approval_wait_ms` (default 20 s, max 120 s, set per call via `_meta.approvalWaitMs`). If resolved in time the
 call proceeds or returns `policy.denied`; otherwise `policy.approval_required` with the `pending_action_id`. A later
 approval executes the action and emits `policy.approval_resolved` plus the tool's own events, all carrying the
-original `correlation_id`. The agent can poll `events.replay` or subscribe to `policy.*`. Pending actions expire
+original `correlation_id`. An Approve tap within 10 seconds of any `ui.*` or `notifications.invoke_action` call is
+ignored: the action stays pending and an `approval` audit row records `approval.ignored_screen_control`. The
+agent can poll `events.replay` or subscribe to `policy.*`. Pending actions expire
 after 10 minutes. Exception: `telephony.place_call` with `driver_managed: true` only accepts approval while
 the invoking request is waiting. A wait timeout cancels that pending action and returns `policy.denied`;
 late approval, including after runtime restart, cannot execute it. This flag also stores a startup deadline:
@@ -369,6 +394,7 @@ Added with saved workflows (same day, phase 2):
 | `automation.run_saved` | AUTOMATION / automation | `{name, input?}`; returns §6.1's report plus `run_correlation_id` |
 | `ai.ask` | LOW_RISK / ai | `{prompt, system?, model?, max_tokens?, json?}` → `{text}` or `{json}`; the configured OpenAI-compatible endpoint, scope `ai.*` |
 | `notifications.post` | LOW_RISK / mutation | `{title, text, urgent?}`: a notification to the owner |
+| `notifications.reply` | EXTERNAL_COMMITMENT / sms | droid-mcp `reply_to_notification`: `{key, text}`. Was COMMUNICATION; now covered by Ask me first and the contact lists (§6 step 5) |
 
 A step may also carry `if` (§6.3): a condition on references; false → the step is `skipped` and the batch goes on.
 

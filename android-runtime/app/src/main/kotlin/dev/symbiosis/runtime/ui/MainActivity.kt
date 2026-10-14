@@ -34,6 +34,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.isSensitiveData
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.symbiosis.runtime.core.Runtime
@@ -67,6 +69,9 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    // The admin token, pairing codes and approvals are on this screen: no screenshots, screen recording or
+    // MediaProjection capture of it (ui.screenshot included), and it is blanked in Recents.
+    window.setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE, android.view.WindowManager.LayoutParams.FLAG_SECURE)
     val runtime = Runtime.get(this)
     if (RuntimeService.isEnabled(this)) RuntimeService.start(this)
     if (intent?.getBooleanExtra(EXTRA_REQUEST_DIALER_ROLE, false) == true) requestDialerRole()
@@ -87,6 +92,9 @@ class MainActivity : ComponentActivity() {
       dev.symbiosis.runtime.policy.PolicyDecision.APPROVE
     var tick by remember { mutableStateOf(0) }
     var showToken by remember { mutableStateOf(false) }
+    var tokenVersion by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    // API 34+: hidden from accessibility services that are not accessibility tools (our own ui.* service included).
+    val sensitive = Modifier.semantics { isSensitiveData = true }
     var pairingCode by remember { mutableStateOf<String?>(null) }
     var chainState by remember { mutableStateOf("not checked") }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -117,9 +125,17 @@ class MainActivity : ComponentActivity() {
         }
         Text("From a workstation: adb forward tcp:8765 tcp:8765, then POST http://127.0.0.1:8765/mcp", style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedButton(onClick = { showToken = !showToken }) { Text(if (showToken) "Hide admin token" else "Show admin token") }
+          OutlinedButton(modifier = sensitive, onClick = { showToken = !showToken }) { Text(if (showToken) "Hide admin token" else "Show admin token") }
+          // A leaked admin token is revoked by replacing it: the old one stops working and its connections close.
+          OutlinedButton(modifier = sensitive, onClick = {
+            scope.launch {
+              kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runtime.rotateAdminToken() }
+              tokenVersion++
+              android.widget.Toast.makeText(this@MainActivity, "Admin token replaced. Clients using the old one are disconnected.", android.widget.Toast.LENGTH_LONG).show()
+            }
+          }) { Text("Rotate admin token") }
         }
-        if (showToken) Text(runtime.secure.adminToken, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+        if (showToken) Text(remember(tokenVersion) { runtime.secure.adminToken }, modifier = sensitive, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
         HorizontalDivider()
         var lan by remember { mutableStateOf(RuntimeService.isLanExposed(this@MainActivity)) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -133,15 +149,15 @@ class MainActivity : ComponentActivity() {
       Section("Safety") {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
           Text(if (estop) "EMERGENCY STOP engaged" else "Emergency stop")
-          Switch(checked = estop, onCheckedChange = { runtime.policy.setEmergencyStop(it) })
+          Switch(checked = estop, modifier = sensitive, onCheckedChange = { runtime.policy.setEmergencyStop(it) })
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
           Text("Observe-only (read tools only)")
-          Switch(checked = observe, onCheckedChange = { runtime.policy.setObserveOnly(it) })
+          Switch(checked = observe, modifier = sensitive, onCheckedChange = { runtime.policy.setObserveOnly(it) })
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
           Text("Ask me first: texts, calls, screen control")
-          Switch(checked = asksFirst, onCheckedChange = { runtime.policy.setAsksFirst(it) })
+          Switch(checked = asksFirst, modifier = sensitive, onCheckedChange = { runtime.policy.setAsksFirst(it) })
         }
         Text(
           if (asksFirst) "Each one waits for your Approve tap here or in a notification."
@@ -153,12 +169,12 @@ class MainActivity : ComponentActivity() {
       Section("Pair an agent") {
         Text("Mint a one-time code (5 min). The agent POSTs it to /pair and receives a scoped token.", style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          Button(onClick = {
+          Button(modifier = sensitive, onClick = {
             pairingCode = runtime.peers.mintStandardCode().code
           }) { Text("Standard agent") }
-          OutlinedButton(onClick = { pairingCode = runtime.peers.mintPairingCode(listOf("*"), ActionClass.DEVICE_MUTATION).code }) { Text("Full access") }
+          OutlinedButton(modifier = sensitive, onClick = { pairingCode = runtime.peers.mintPairingCode(listOf("*"), ActionClass.DEVICE_MUTATION).code }) { Text("Full access") }
         }
-        pairingCode?.let { Text(it, style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Monospace) }
+        pairingCode?.let { Text(it, modifier = sensitive, style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Monospace) }
       }
 
       Section("Permissions") {
@@ -174,10 +190,18 @@ class MainActivity : ComponentActivity() {
 
       if (pending.isNotEmpty()) Section("Pending approvals (${pending.size})") {
         pending.forEach { pa ->
-          Text("${pa.capability} · ${pa.actionClass} · ${pa.args.entries.take(2).joinToString { (k, v) -> "$k=$v" }}", style = MaterialTheme.typography.bodySmall)
+          // Every argument in full, target and body first, undeclared ones flagged (policy/ApprovalSummary.kt).
+          Text("${pa.capability} · ${pa.actionClass}", modifier = sensitive, style = MaterialTheme.typography.bodyMedium)
+          Text(dev.symbiosis.runtime.policy.ApprovalSummary.format(runtime.registry.get(pa.capability), pa.args).ifEmpty { "no arguments" }, modifier = sensitive, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { scope.launch { runtime.resolveApproval(pa.id, true, "ui"); tick++ } }) { Text("Approve") }
-            OutlinedButton(onClick = { scope.launch { runtime.resolveApproval(pa.id, false, "ui"); tick++ } }) { Text("Deny") }
+            Button(modifier = sensitive, onClick = {
+              scope.launch {
+                val why = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runtime.resolveApproval(pa.id, true, "ui") }
+                if (why == Runtime.APPROVAL_IGNORED_SCREEN_CONTROL) android.widget.Toast.makeText(this@MainActivity, "Not approved: an agent used screen control in the last 10 seconds. Tap Approve again shortly.", android.widget.Toast.LENGTH_LONG).show()
+                tick++
+              }
+            }) { Text("Approve") }
+            OutlinedButton(modifier = sensitive, onClick = { scope.launch { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runtime.resolveApproval(pa.id, false, "ui") }; tick++ } }) { Text("Deny") }
           }
         }
       }
