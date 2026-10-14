@@ -1,5 +1,6 @@
 package dev.symbiosis.runtime.telephony
 
+import ai.onnxruntime.OrtSession.SessionOptions.OptLevel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.float
 import kotlinx.serialization.json.jsonObject
@@ -111,10 +112,10 @@ class TurnDetectorTest {
    * DLL fails in its init routine for 1.28 and 1.29). On-device verification can use
    * `debug.turn_selftest`; here we only skip rather than fail when the host runtime is unusable.
    */
-  private fun detectorOrSkip(): TurnDetector {
+  private fun detectorOrSkip(optimization: OptLevel = OptLevel.ALL_OPT): TurnDetector {
     val model = File("src/main/assets/${TurnDetector.ASSET}").readBytes()
     return try {
-      TurnDetector.fromBytes(model)
+      TurnDetector.fromBytes(model, optimization)
     } catch (e: Throwable) {
       if (e is UnsatisfiedLinkError || e is NoClassDefFoundError || e.cause is UnsatisfiedLinkError) {
         assumeTrue("ONNX runtime native library unavailable on this host: ${e.message}", false)
@@ -125,13 +126,20 @@ class TurnDetectorTest {
 
   @Test
   fun `model reproduces the reference probability`() {
+    // Against the stored reference: unoptimized float execution, identical on every CPU. The fused int8 kernels
+    // that ALL_OPT selects vary with the host CPU (a GitHub runner produced more than twice the reference).
+    detectorOrSkip(OptLevel.NO_OPT).use { exact ->
+      val want = goldenMetadata()["expected_probability"]!!.jsonPrimitive.float
+      val got = exact.probabilityFromFeatures(goldenFeatures())
+      assertEquals("unoptimized model on reference features: got $got, reference $want", want, got, 0.01f)
+    }
+    // Our front end against the reference features, both through the production session on this host.
     detectorOrSkip().use { det ->
       val pRef = det.probabilityFromFeatures(goldenFeatures())
-      assertEquals(goldenMetadata()["expected_probability"]!!.jsonPrimitive.float, pRef, 0.01f)
       val t0 = System.nanoTime()
       val p = det.probability(goldenPcm())
       println("end-to-end: ${(System.nanoTime() - t0) / 1_000_000} ms, p=$p (reference features -> $pRef)")
-      assertEquals(pRef, p, 0.02f)
+      assertEquals("end-to-end p=$p vs reference features $pRef", pRef, p, 0.02f)
     }
   }
 

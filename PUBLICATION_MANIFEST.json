@@ -313,7 +313,7 @@
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/TurnDetector.kt",
-    "sha256": "1f7aecea2abb8a9b6713c5d29d7358edc87dc506d6d6a3b24d683d74c52fdf7d"
+    "sha256": "b5909ad677d74fee2cca2ddae08a8e4908727b7c624fa2c3d43036fd0c4d398e"
   },
   {
     "path": "android-runtime/app/src/main/kotlin/dev/symbiosis/runtime/telephony/Vad.kt",
@@ -453,7 +453,7 @@
   },
   {
     "path": "android-runtime/app/src/test/kotlin/dev/symbiosis/runtime/telephony/TurnDetectorTest.kt",
-    "sha256": "526000ce5e6470093015b5f7cf781daf471bd1664c481e92c76725c7997b5976"
+    "sha256": "fe025d01899dafa403b97665a671eb3b4bb652a0ba5199707d75df82b08cd808"
   },
   {
     "path": "android-runtime/app/src/test/resources/README.md",
